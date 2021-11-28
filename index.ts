@@ -1,6 +1,9 @@
 import { klona } from 'klona';
 
-interface ICacheConfig<TInput extends { [key: string]: any }, TOut> {
+type TAnyObject = { [key: string]: any };
+type TInputBase = TAnyObject; // string | number;
+
+interface ICacheConfig<TInput extends TAnyObject, TOut> {
   /**
    * cache duration in seconds. pass 0 to make it never expires.
    * default: 0.
@@ -12,6 +15,7 @@ interface ICacheConfig<TInput extends { [key: string]: any }, TOut> {
    * default: '__default'.
    */
   key?: keyof TInput | ((args: TInput) => string);
+  // key?: (TInput extends TAnyObject ? keyof TInput : string | number) | ((args: TInput) => string);
   /**
    * if to store into storage for next use.
    */
@@ -67,7 +71,7 @@ export function setDefaults(config: typeof DefaultConfig) {
   }
 }
 
-export default function cache<TInput extends { [key: string]: any }, TOut = any>(resolver: (args: TInput) => Promise<TOut>, config?: ICacheConfig<TInput, TOut>) {
+export default function cache<TInput extends TAnyObject, TOut = any>(resolver: (args: TInput) => Promise<TOut>, config?: ICacheConfig<TInput, TOut>) {
   let cacheMap: Map<string, ICacheItem<TOut>>;
   let instanceConfig = { ...DefaultConfig, ...config };
   const { persist, persistMedia, debug } = instanceConfig;
@@ -103,7 +107,7 @@ export default function cache<TInput extends { [key: string]: any }, TOut = any>
     do(params: TInput): Promise<TOut> {
       if (!cacheMap) cacheMap = new Map();
       const { key, getData } = instanceConfig;
-      const cacheKey = (typeof key === 'function' ? key(params) : params[key]) || DefaultConfig.key;
+      const cacheKey = (typeof key === 'function' ? key(params) : params[key as string]) || DefaultConfig.key;
       // read cache
       if (this.has(cacheKey)) {
         logDebug('using cache with key:' + cacheKey);
