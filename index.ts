@@ -1,20 +1,24 @@
 import { klona } from 'klona';
 
-interface ICacheConfig<TInput, TOut> {
+interface ICacheConfig<TInput extends { [key: string]: any }, TOut> {
   /**
-   * cache duration in seconds. pass 0 to make it never expires. default: 0.
+   * cache duration in seconds. pass 0 to make it never expires.
+   * default: 0.
    */
   maxAge: number;
   /**
-   * cache key. Must be unique for each instance. default: '__default'.
+   * the property name of TInput used for cache.
+   * Must be unique for current instance.
+   * default: '__default'.
    */
-  key?: string | ((args: TInput) => string);
+  key?: keyof TInput | ((args: TInput) => string);
   /**
    * if to store into storage for next use.
    */
   persist?: string;
   /**
-   * the media to persist data into. default: "sessionStorage"
+   * the media to persist data into.
+   * default: "sessionStorage"
    */
   persistMedia?: 'localStorage' | 'sessionStorage';
   /**
@@ -22,17 +26,9 @@ interface ICacheConfig<TInput, TOut> {
    */
   debug?: boolean;
   /**
-   * if to ignore when promise rejected
-   */
-  ignoreError?: boolean;
-  /**
    * get the exact data to cache.
    */
   getData?: (res: any) => TOut;
-  /**
-   * detemine if to cache the data.
-   */
-  canCache?: (res: TOut) => boolean;
 }
 
 interface ICacheItem<T> {
@@ -40,37 +36,88 @@ interface ICacheItem<T> {
   data: T;
 }
 
-const UsedPersistKeys = [];
+const DefaultConfig: Omit<ICacheConfig<any, any>, 'persist'> = {
+  maxAge: 0,
+  key: '__default',
+};
 
-function cache<TInput, TOut = any>(resolver: (args: TInput) => Promise<TOut>, config?: ICacheConfig<TInput, TOut>) {
-  const cacheConfig = { ...cache.defaults, ...config };
+const UsedPersistKeys: string[] = [];
+const LogPrefix = '[cache]';
+
+function logError(err: any) {
+  console.error(`${LogPrefix}`, err);
+}
+
+/**
+ * 设置默认配置
+ * @param config
+ */
+export function setDefaults(config: typeof DefaultConfig) {
+  if (config && Object.prototype.toString.call(config) === '[object Object]') {
+    if ('persist' in config) {
+      logError(`You CAN NOT set default "persist". ignored.`);
+      // @ts-ignore avoid passing persist
+      delete config.persist;
+    }
+    if (!config.key) {
+      logError(`Invaid default "key": ${config.key as string}. ignored.`);
+      delete config.key;
+    }
+    Object.assign(DefaultConfig, config);
+  }
+}
+
+export default function cache<TInput extends { [key: string]: any }, TOut = any>(resolver: (args: TInput) => Promise<TOut>, config?: ICacheConfig<TInput, TOut>) {
   let cacheMap: Map<string, ICacheItem<TOut>>;
+  let instanceConfig = { ...DefaultConfig, ...config };
+  const { persist, persistMedia, debug } = instanceConfig;
 
-  function getConfig(itemConfig: ICacheConfig<TInput, TOut>) {
-    return { ...cache.defaults, ...config, ...itemConfig };
+  function getMediaHost() {
+    if (persistMedia === 'localStorage') {
+      return window.localStorage;
+    }
+    return window.sessionStorage;
+  }
+
+  function logDebug(msg: any) {
+    if (debug) {
+      console.log(`${LogPrefix}`, msg);
+    }
+  }
+
+  if (persist && typeof persist === 'string') {
+    if (UsedPersistKeys.includes(persist)) {
+      logError('duplicate "persist" =>' + persist);
+    } else {
+      UsedPersistKeys.push(persist);
+      try {
+        const storeDataJson = getMediaHost().getItem(persist);
+        cacheMap = new Map(JSON.parse(storeDataJson));
+      } catch (error) {
+        logError(error);
+      }
+    }
   }
 
   return {
-    do(params: TInput, itemConfig?: ICacheConfig<TInput, TOut>): Promise<TOut> {
+    do(params: TInput): Promise<TOut> {
       if (!cacheMap) cacheMap = new Map();
-      const { key, maxAge, getData, canCache } = getConfig(itemConfig);
-      let cacheKey = key as string;
-      if (typeof key === 'function') {
-        cacheKey = key(params);
-      }
+      const { key, getData } = instanceConfig;
+      const cacheKey = (typeof key === 'function' ? key(params) : params[key]) || DefaultConfig.key;
       // read cache
       if (this.has(cacheKey)) {
-        return Promise.resolve(cacheMap.get(cacheKey).data);
+        logDebug('using cache with key:' + cacheKey);
+        return this.get(cacheKey);
       }
       // set cache
-      const task = resolver(params).then((res) => {
+      return resolver(params).then((res) => {
+        let ret = res;
         if (typeof getData === 'function') {
-          const data = getData(res);
-          // if(data)
+          ret = getData(res);
         }
+        this.set(cacheKey, ret);
+        return ret;
       });
-      // task.then((res) => {}).then;
-      return resolver(params);
     },
     clear(key?: string): void {
       if (key) {
@@ -78,27 +125,37 @@ function cache<TInput, TOut = any>(resolver: (args: TInput) => Promise<TOut>, co
       } else {
         cacheMap.clear();
       }
+      this.persist();
     },
-    set(key: string, value: TOut, itemConfig?: Pick<ICacheConfig<TInput, TOut>, 'maxAge'>) {
-      const { maxAge } = getConfig(itemConfig);
-      cacheMap.set(key, {
-        expire: maxAge > 0 ? Date.now() + maxAge * 100 : 0,
-        data: klona<TOut>(value),
-      });
-      if (config) {
-        const { persist, persistMedia } = config;
-        if (persist) {
-          if (persistMedia === 'localStorage') {
-            window.localStorage.setItem(persist, JSON.stringify(value));
-          } else {
-            window.sessionStorage.setItem(persist, JSON.stringify(value));
-          }
+    persist() {
+      if (persist) {
+        try {
+          const json = JSON.stringify(Array.from(cacheMap.entries()));
+          getMediaHost().setItem(persist, json);
+        } catch (error) {
+          logError(error);
         }
       }
     },
+    set(key: string, value: TOut) {
+      const { maxAge } = instanceConfig;
+      const expire = maxAge > 0 ? Date.now() + maxAge * 100 : 0;
+      logDebug(`set cache with key:${key}, expires at ${new Date(expire)}`);
+      cacheMap.set(key, {
+        expire,
+        data: klona<TOut>(value),
+      });
+      if (maxAge > 0) {
+        // relase memory ASAP
+        setTimeout(() => {
+          this.clear(key);
+        }, 0);
+      }
+      this.persist();
+    },
     get(key: string): TOut | null {
       if (this.has(key)) {
-        return cacheMap.get(key).data;
+        return klona<TOut>(cacheMap.get(key).data);
       }
       return null;
     },
@@ -115,30 +172,3 @@ function cache<TInput, TOut = any>(resolver: (args: TInput) => Promise<TOut>, co
     // cache: cacheMap,  // This will probably dirty the data, so DO NOT do this,
   };
 }
-
-cache.defaults = {
-  maxAge: 0,
-  key: '__default',
-  ignoreError: true,
-} as Omit<ICacheConfig<any, any>, 'persist'>;
-
-export default cache;
-
-function request(url: string, data: any) {
-  return Promise.resolve({
-    success: true,
-    value: 1,
-  });
-}
-
-const getDetail = cache<{ id: number; name: string }, { success: boolean; value: any }>(
-  ({ id, name }) => {
-    return request('/api/getDetail', { id, name });
-  },
-  {
-    maxAge: 10,
-    key: 'id',
-  }
-);
-
-getDetail.do({ id: 1, name: 'zyy' });
