@@ -1,5 +1,3 @@
-import { klona } from 'klona';
-
 type TAnyObject = { [key: string]: any };
 type TKey = string | number | boolean;
 type TInputBase = TAnyObject | TKey;
@@ -13,8 +11,8 @@ interface ICacheConfig<TInput extends TInputBase, TOut> {
   /**
    * the property name of TInput used for cache key.
    * Must be unique for current instance.
-   * NaN | null | undefined are not allowed to be a key.
-   * default: '__INTERNAL_USE__'.
+   * only string | number | boolean is allowed to be a key.
+   * default: "__INTERNAL_USE__".
    */
   // key?: keyof TInput | ((args: TInput) => string);
   key?: (TInput extends TAnyObject ? keyof TInput : never) | ((args: TInput) => string);
@@ -41,9 +39,9 @@ interface ICacheConfig<TInput extends TInputBase, TOut> {
   canCache?: (res: TOut) => TOut;
 }
 
-interface ICacheItem<T> {
+interface ICacheItem {
   expire: number;
-  data: T;
+  data: string;
 }
 
 type TDefaultConfig = Omit<ICacheConfig<any, any>, 'persist' | 'key'> & {
@@ -60,7 +58,7 @@ const DefaultConfig: TDefaultConfig = {
 };
 
 const UsedPersistKeys: string[] = [];
-const LogPrefix = '[cache]';
+const LogPrefix = '[promise-cache]';
 
 function isPlainObject(target: any) {
   return Object.prototype.toString.call(target) === '[object Object]';
@@ -108,12 +106,12 @@ export function setDefaults(config: TDefaultConfig) {
  * @returns
  */
 export default function cache<TInput extends TInputBase, TOut = any>(resolver: (args: TInput) => Promise<TOut>, config?: ICacheConfig<TInput, TOut>) {
-  let cacheMap: Map<TKey, ICacheItem<TOut>>;
+  let cacheMap: Map<TKey, ICacheItem>;
   let instanceConfig = { ...DefaultConfig, ...config };
   const { persist, persistMedia, debug } = instanceConfig;
   const isValidPersist = persist && typeof persist === 'string';
 
-  function persistCache() {
+  const persistCache = () => {
     if (isValidPersist) {
       try {
         const json = JSON.stringify(Array.from(cacheMap.entries()));
@@ -122,20 +120,20 @@ export default function cache<TInput extends TInputBase, TOut = any>(resolver: (
         logError(error);
       }
     }
-  }
+  };
 
-  function getMediaHost() {
+  const getMediaHost = () => {
     if (persistMedia === 'localStorage') {
       return window.localStorage;
     }
     return window.sessionStorage;
-  }
+  };
 
-  function logDebug(msg: any) {
+  const logDebug = (msg: any) => {
     if (debug) {
       console.log(`${LogPrefix}`, msg);
     }
-  }
+  };
 
   if (isValidPersist) {
     if (UsedPersistKeys.includes(persist)) {
@@ -150,7 +148,7 @@ export default function cache<TInput extends TInputBase, TOut = any>(resolver: (
         logError(error);
       }
     }
-  } else {
+  } else if (persist) {
     logError(`invaid "persist": ${persist}. Ignored.`);
   }
 
@@ -163,7 +161,7 @@ export default function cache<TInput extends TInputBase, TOut = any>(resolver: (
     do(params: TInput): Promise<TOut> {
       if (!cacheMap) cacheMap = new Map();
       const { key, getData, canCache } = instanceConfig;
-      let cacheKey: ICacheConfig<TInput, TOut>['key'];
+      let cacheKey: TKey;
       if (typeof key === 'function') {
         cacheKey = key(params);
       } else if (isPlainObject(params)) {
@@ -184,7 +182,7 @@ export default function cache<TInput extends TInputBase, TOut = any>(resolver: (
           ret = getData(res);
         }
         if (!canCache || (typeof canCache === 'function' && canCache(res))) {
-          this.set(cacheKey, ret);
+          this.set(ret, cacheKey);
         }
         return ret;
       });
@@ -211,17 +209,17 @@ export default function cache<TInput extends TInputBase, TOut = any>(resolver: (
       key = normalizeKey(key);
       if (isValidKey(key)) {
         const { maxAge } = instanceConfig;
-        const expire = maxAge > 0 ? Date.now() + maxAge * 100 : 0;
+        const expire = maxAge > 0 ? Date.now() + maxAge * 1000 : 0;
         logDebug(`set cache with key:${key}, expires at ${new Date(expire)}`);
         cacheMap.set(key, {
           expire,
-          data: klona<TOut>(data),
+          data: JSON.stringify(data),
         });
         if (maxAge > 0) {
           // relase memory ASAP
-          setTimeout(() => this.clear(key), maxAge);
+          setTimeout(() => this.clear(key), maxAge * 1000);
         }
-        this.persist();
+        persistCache();
       } else {
         logError(`invaid "key": ${String(key)}. Ignored.`);
       }
@@ -234,7 +232,7 @@ export default function cache<TInput extends TInputBase, TOut = any>(resolver: (
     get(key?: TKey): TOut | null {
       key = normalizeKey(key);
       if (this.has(key)) {
-        return klona<TOut>(cacheMap.get(key).data);
+        return JSON.parse(cacheMap.get(key).data) as TOut;
       }
       return null;
     },
