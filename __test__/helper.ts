@@ -1,7 +1,7 @@
 export function request(url: string, data: any) {
   return Promise.resolve({
     success: true,
-    value: 1,
+    data: Math.random(),
   });
 }
 
@@ -14,6 +14,6 @@ export function errorRequest(url: string, data: any) {
 export function falseRequest(url: string, data: any) {
   return Promise.reject({
     success: false,
-    value: null,
+    data: null,
   });
 }

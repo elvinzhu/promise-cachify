@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc && rollup -c",
     "test": "jest --reporter=lcov --coverage",
+    "jest": "jest",
     "coverage": "codecov --disable=gcov,search -t ebd24777-2e7f-47c0-b00e-7fc5a07456a7 -f coverage/coverage-final.json"
   },
   "repository": {
@@ -39,12 +40,9 @@
     "codecov": "^3.7.2",
     "jest": "^25.1.0",
     "rollup": "^1.31.1",
-    "rollup-plugin-banner": "^0.2.1",
-    "rollup-plugin-terser": "^5.2.0",
     "typescript": "^3.7.5"
   },
   "dependencies": {
-    "@types/jest": "^27.0.3",
-    "klona": "^2.0.5"
+    "@types/jest": "^27.0.3"
   }
 }
