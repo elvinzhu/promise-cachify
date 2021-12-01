@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+
+    <script type="module">
+        import cache, { setDefaults } from '../dist/index.esm.js';
+
+        function request(url, data) {
+            return Promise.resolve({
+                success: true,
+                data: Math.random(),
+            });
+        }
+
+        function errorRequest(url, data) {
+            return Promise.reject({
+                status: 404,
+            });
+        }
+
+        function falseRequest(url, data) {
+            return Promise.reject({
+                success: false,
+                data: null,
+            });
+        }
+
+        const getDetail = cache(
+            ({ id }) => {
+                return request('/api/getDetail', { id });
+            },
+            {
+                maxAge: 10,
+                key: 'id',
+            }
+        );
+
+        getDetail.do({ id: 1 })
+
+    </script>
+</head>
+
+<body>
+
+</body>
+
+</html>
