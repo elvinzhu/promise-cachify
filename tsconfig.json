@@ -2,6 +2,7 @@
   "compilerOptions": {
     "outDir": "dist",
     "target": "es6",
+    "importHelpers": true,
     "noImplicitAny": true,
     "removeComments": false,
     "moduleResolution": "node",
