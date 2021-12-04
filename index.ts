@@ -159,6 +159,7 @@ export default function cache<TInput extends TInputBase, TOut>(resolver: (args: 
    * @returns
    */
   function resolve(params: TInput): Promise<TOut> {
+    // lazy initialize
     if (!cacheMap) cacheMap = new Map();
     const { key } = instanceConfig;
     let cacheKey: TKey;
@@ -176,8 +177,8 @@ export default function cache<TInput extends TInputBase, TOut>(resolver: (args: 
       return get(cacheKey);
     }
     // set cache
-    const resolveTask = resolver(params);
-    set(resolveTask, cacheKey);
+    const cacheData = resolver(params);
+    set(cacheData, cacheKey);
   }
 
   /**
@@ -211,13 +212,13 @@ export default function cache<TInput extends TInputBase, TOut>(resolver: (args: 
           data: cacheData,
         });
         logDebug(`set cache with key:${key}, expires at ${new Date(expire)}`);
+        if (maxAge > 0) {
+          // relase memory ASAP
+          setTimeout(() => clear(key), maxAge * 1000);
+        }
+        persistCache();
       });
       cacheData.catch(logError);
-      if (maxAge > 0) {
-        // relase memory ASAP
-        setTimeout(() => clear(key), maxAge * 1000);
-      }
-      persistCache();
     } else {
       logError(`invaid "key": ${String(key)}. Ignored.`);
     }
