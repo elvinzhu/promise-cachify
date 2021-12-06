@@ -24,23 +24,23 @@
         }
 
         function falseRequest(url, data) {
-            return Promise.reject({
+            return Promise.resolve({
                 success: false,
                 data: null,
             });
         }
 
         const getDetail = cache(
-            ({ id }) => {
-                return request('/api/getDetail', { id });
+            (id) => {
+                return errorRequest('/api/getDetail', { id });
             },
-            {
-                maxAge: 10,
-                key: 'id',
-            }
+            { maxAge: 10, debug: true }
         );
 
-        getDetail.do({ id: 1 })
+        getDetail.do(1).then(res => {
+            debugger;
+        });
+        getDetail.has(1);
 
     </script>
 </head>

@@ -12,7 +12,7 @@ export function errorRequest(url: string, data: any) {
 }
 
 export function falseRequest(url: string, data: any) {
-  return Promise.reject({
+  return Promise.resolve({
     success: false,
     data: null,
   });

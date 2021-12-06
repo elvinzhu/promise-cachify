@@ -12,7 +12,7 @@ interface ICacheConfig<TInput extends TInputBase> {
    * the property name of TInput used for cache key.
    * Must be unique for current instance.
    * only string | number | boolean is allowed to be a key.
-   * default: "__INTERNAL_USE__".
+   * default: \"__INTERNAL_USE__\".
    */
   // key?: keyof TInput | ((args: TInput) => string);
   key?: (TInput extends TAnyObject ? keyof TInput : never) | ((args: TInput) => string);
@@ -179,6 +179,7 @@ export default function cache<TInput extends TInputBase, TOut>(resolver: (args: 
     // set cache
     const cacheData = resolver(params);
     set(cacheData, cacheKey);
+    return cacheData;
   }
 
   /**
@@ -205,20 +206,18 @@ export default function cache<TInput extends TInputBase, TOut>(resolver: (args: 
     if (isValidKey(key)) {
       const { maxAge } = instanceConfig;
       const expire = maxAge > 0 ? Date.now() + maxAge * 1000 : 0;
-      const cacheData = Promise.resolve(data).then(JSON.stringify);
-      cacheData.then(() => {
-        cacheMap.set(key, {
-          expire,
-          data: cacheData,
-        });
-        logDebug(`set cache with key:${key}, expires at ${new Date(expire)}`);
-        if (maxAge > 0) {
-          // relase memory ASAP
-          setTimeout(() => clear(key), maxAge * 1000);
-        }
-        persistCache();
+      const cacheData = Promise.resolve(data).then(JSON.stringify); // DO NOT append .then or .catch
+      // must set in sync, or the concurrent request wont get it.
+      cacheMap.set(key, { expire, data: cacheData });
+      logDebug(`set cache with key:${key}, expires at: ${new Date(expire)}`);
+      if (maxAge > 0 && maxAge < 60 * 5) {
+        // relase memory ASAP if maxAge less 5 minute
+        setTimeout(() => clear(key), maxAge * 1000);
+      }
+      cacheData.then(persistCache).catch((err) => {
+        cacheMap.delete(key);
+        logDebug('error happened, ignore cache', err);
       });
-      cacheData.catch(logError);
     } else {
       logError(`invaid "key": ${String(key)}. Ignored.`);
     }
