@@ -9,7 +9,7 @@ test('only called once', () => {
       getDetailCall();
       return request('/api/getDetail', { id });
     },
-    { maxAge: 10, key: 'id' }
+    { maxAge: 10 }
   );
 
   const task = getDetail.do({ id: 1 });
@@ -21,50 +21,18 @@ test('only called once', () => {
   });
 });
 
-test('use number as input param', () => {
-  const getDetail = cache<number, { success: boolean; data: any }>(
-    (id) => {
-      return request('/api/getDetail', { id });
-    },
-    { maxAge: 10 }
-  );
-
-  getDetail.do(1);
-  expect(getDetail.has(1)).toBe(true);
-});
-
-
 test('test with unhandledRejected exception', () => {
-  const getDetail = cache<number, { success: boolean; data: any }>(
-    (id) => {
-      return errorRequest('/api/getDetail', { id });
+  const getDetail = cache<{ id: number }, { success: boolean; data: any }>(
+    (param) => {
+      return errorRequest('/api/getDetail', param);
     },
     { maxAge: 10 }
   );
 
-  getDetail.do(1);
-  expect(getDetail.has(1)).toBe(true);
+  const data = { id: 1 };
+  const task = getDetail.do(data);
+  expect(getDetail.has(getDetail.getCacheKey(data))).toBe(true);
+  return task.finally(() => {
+    expect(getDetail.has(getDetail.getCacheKey(data))).toBe(false);
+  });
 });
-
-// const getDetail2 = cache<number, { success: boolean; data: any }>(
-//   (data) => {
-//     return request('/api/getDetail', data);
-//   },
-//   {
-//     maxAge: 10,
-//   }
-// );
-
-// getDetail2.do(1);
-
-// const getDetail3 = cache(
-//   (data) => {
-//     return request('/api/getDetail', data);
-//   },
-//   {
-//     maxAge: 10,
-//     key: 'id',
-//   }
-// );
-
-// getDetail2.do(1);

@@ -1,21 +1,18 @@
-type TAnyObject = { [key: string]: any };
-type TKey = string | number | boolean;
-type TInputBase = TAnyObject | TKey;
+type TKey = string;
+type TInputBase = { [key: string]: string | number | boolean | null | undefined };
 
 interface ICacheConfig<TInput extends TInputBase> {
   /**
    * cache duration in seconds. pass 0 to make it never expires.
    * default: 0.
    */
-  maxAge: number;
+  maxAge?: number;
   /**
-   * the property name of TInput used for cache key.
-   * Must be unique for current instance.
-   * only string | number | boolean is allowed to be a key.
+   * custom cache key.
+   * must be unique for current instance.
    * default: \"__INTERNAL_USE__\".
    */
-  // key?: keyof TInput | ((args: TInput) => string);
-  key?: (TInput extends TAnyObject ? keyof TInput : never) | ((args: TInput) => string);
+  key?: (res: TInput) => string;
   /**
    * if to store into storage for next use.
    */
@@ -41,8 +38,12 @@ type TDefaultConfig = Omit<ICacheConfig<any>, 'persist' | 'key'> & {
   /**
    * default cache key.
    */
-  key: string;
+  key?: string;
 };
+
+const UsedPersistKeys: string[] = [];
+const LogPrefix = '[promise-cache]';
+const StorePrefix = 'promise_cache_';
 
 const DefaultConfig: TDefaultConfig = {
   maxAge: 0,
@@ -50,28 +51,44 @@ const DefaultConfig: TDefaultConfig = {
   key: '__INTERNAL_USE__',
 };
 
-const UsedPersistKeys: string[] = [];
-const LogPrefix = '[promise-cache]';
-const StorePrefix = 'promise_cache_';
-
 function isPlainObject(target: any) {
   return Object.prototype.toString.call(target) === '[object Object]';
 }
 
 // var a = new Map([[NaN, 1], [false, 2], [null, 3], [undefined, 4]]);
 // console.log(JSON.stringify(Array.from(a.entries())))
-// => [[null,1],[false,2],[null,3],[null,4]]
+// => "[[null,1],[false,2],[null,3],[null,4]]"
 
-function isValidKey(target: any) {
-  return ['number', 'string', 'boolean'].includes(typeof target);
-}
-
-function normalizeKey(key: any): TKey {
-  return key === undefined ? DefaultConfig.key : key;
+/**
+ * rewrite undefined & null to default key;
+ * @param key
+ * @returns
+ */
+function normalizeKey(key: any) {
+  return key === undefined || key === null ? DefaultConfig.key : key;
 }
 
 function logError(...args: any[]) {
   console.error(`${LogPrefix}`, ...args);
+}
+
+/**
+ * generate cache key from object.
+ * NOTE: sub-object will not work properly;
+ * @param params
+ * @returns
+ */
+function generateKey(params: TInputBase): string {
+  if (isPlainObject(params)) {
+    const objKeys = Object.keys(params);
+    if (objKeys.length) {
+      return objKeys
+        .sort()
+        .map((key) => `${key}=${String(params[key])}`)
+        .join('&');
+    }
+  }
+  return DefaultConfig.key;
 }
 
 /**
@@ -85,8 +102,8 @@ export function setDefaults(config: TDefaultConfig) {
       // @ts-ignore avoid passing persist
       delete config.persist;
     }
-    if (!config.key) {
-      logError(`invaid default "key": ${config.key}. Ignored.`);
+    if (!config.key && typeof config.key !== 'undefined') {
+      logError(`invaid default "key": ${config.key}. ignored.`);
       delete config.key;
     }
     Object.assign(DefaultConfig, config);
@@ -150,7 +167,7 @@ export default function cache<TInput extends TInputBase, TOut>(resolver: (args: 
       }
     }
   } else if (persist) {
-    logError(`invaid "persist": ${persist}. Ignored.`);
+    logError(`invaid "persist": ${persist}. ignored.`);
   }
 
   /**
@@ -158,33 +175,56 @@ export default function cache<TInput extends TInputBase, TOut>(resolver: (args: 
    * @param params
    * @returns
    */
-  function resolve(params: TInput): Promise<TOut> {
+  function resolve(params?: TInput): Promise<TOut> {
     // lazy initialize
     if (!cacheMap) cacheMap = new Map();
-    const { key } = instanceConfig;
-    let cacheKey: TKey;
-    if (typeof key === 'function') {
-      cacheKey = key(params);
-    } else if (isPlainObject(params)) {
-      cacheKey = (params as TAnyObject)[key as string];
-    } else {
-      cacheKey = params as any;
-    }
-    cacheKey = normalizeKey(cacheKey) as TKey;
+    let cacheKey = getCacheKey(params);
     if (has(cacheKey)) {
       // read cache
       logDebug(`using cache with key:${cacheKey}`);
       return get(cacheKey);
     }
-    // set cache
-    const cacheData = resolver(params);
-    set(cacheData, cacheKey);
+    let cacheData = resolver(params);
+    if (cacheKey) {
+      // set cache
+      set(cacheData, cacheKey);
+      cacheData = cacheData.catch((err) => {
+        cacheMap.delete(cacheKey);
+        logDebug('promise rejected, remove cache:', cacheKey, err);
+        return Promise.reject(err);
+      });
+    }
     return cacheData;
   }
 
   /**
+   * get cache key per TInput
+   * @param params
+   * @returns
+   */
+  function getCacheKey(params?: TInput): string | null {
+    const { key } = instanceConfig;
+    let cacheKey: TKey;
+    if (typeof key === 'function') {
+      // use custom key
+      cacheKey = key(params);
+    } else if (isPlainObject(params)) {
+      // generate key from object
+      cacheKey = generateKey(params);
+    } else {
+      // give it a default value if match condition
+      cacheKey = normalizeKey(params);
+    }
+    if (cacheKey && typeof cacheKey === 'string') {
+      // only string key is allowed.
+      return cacheKey;
+    }
+    return null;
+  }
+
+  /**
    * clear cache.
-   * @param key cache key.
+   * @param key cache key. use default value if missing
    */
   function clear(key?: TKey): void {
     key = normalizeKey(key);
@@ -197,35 +237,41 @@ export default function cache<TInput extends TInputBase, TOut>(resolver: (args: 
   }
 
   /**
+   * clear all
+   */
+  function clearAll(): void {
+    cacheMap.clear();
+    if (isValidPersist) {
+      getMediaHost().removeItem(StorePrefix + persist);
+    }
+  }
+
+  /**
    * set cache data
    * @param value data
    * @param key cache key.
    */
   function set(data: TOut | Promise<TOut>, key?: TKey) {
     key = normalizeKey(key);
-    if (isValidKey(key)) {
-      const { maxAge } = instanceConfig;
-      const expire = maxAge > 0 ? Date.now() + maxAge * 1000 : 0;
-      const cacheData = Promise.resolve(data).then(JSON.stringify); // DO NOT append .then or .catch
-      // must set in sync, or the concurrent request wont get it.
-      cacheMap.set(key, { expire, data: cacheData });
-      logDebug(`set cache with key:${key}, expires at: ${new Date(expire)}`);
-      if (maxAge > 0 && maxAge < 60 * 5) {
-        // relase memory ASAP if maxAge less 5 minute
-        setTimeout(() => clear(key), maxAge * 1000);
-      }
-      cacheData.then(persistCache).catch((err) => {
-        cacheMap.delete(key);
-        logDebug('error happened, ignore cache', err);
-      });
-    } else {
-      logError(`invaid "key": ${String(key)}. Ignored.`);
+    const { maxAge } = instanceConfig;
+    const expire = maxAge > 0 ? Date.now() + maxAge * 1000 : 0;
+    const cacheData = Promise.resolve(data).then(JSON.stringify); // DO NOT append .then or .catch
+    // must set in sync, or the concurrent request wont get it.
+    cacheMap.set(key, { expire, data: cacheData });
+    logDebug(`set cache with key:${key}, expires at: ${new Date(expire)}`);
+    if (maxAge > 0 && maxAge < 60 * 5) {
+      // relase memory ASAP if maxAge less 5 minute
+      setTimeout(() => clear(key), maxAge * 1000);
     }
+    cacheData.then(persistCache).catch(() => {
+      // this is a new Promise instance,
+      // so hide the rejection
+    });
   }
 
   /**
    * retrieve cached data.
-   * @param key cache key.
+   * @param key cache key. use default value if missing
    * @returns
    */
   function get(key?: TKey): Promise<TOut> | null {
@@ -246,7 +292,7 @@ export default function cache<TInput extends TInputBase, TOut>(resolver: (args: 
 
   /**
    * check if cache key exist.
-   * @param key cache key.
+   * @param key cache key. use default value if missing
    * @returns
    */
   function has(key?: TKey): boolean {
@@ -261,5 +307,5 @@ export default function cache<TInput extends TInputBase, TOut>(resolver: (args: 
     return false;
   }
 
-  return { do: resolve, set, get, has, clear, getAll };
+  return { do: resolve, set, get, has, clear, clearAll, getAll, getCacheKey };
 }

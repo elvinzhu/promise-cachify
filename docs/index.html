@@ -9,6 +9,7 @@
 
     <script type="module">
         import cache, { setDefaults } from '../dist/index.esm.js';
+        setDefaults({ debug: true });
 
         function request(url, data) {
             return Promise.resolve({
@@ -31,16 +32,19 @@
         }
 
         const getDetail = cache(
-            (id) => {
-                return errorRequest('/api/getDetail', { id });
+            (param) => {
+                return errorRequest('/api/getDetail', param);
             },
-            { maxAge: 10, debug: true }
+            { maxAge: 10 }
         );
 
-        getDetail.do(1).then(res => {
-            debugger;
+        const data = { id: 1 };
+        const task = getDetail.do(data);
+        task.catch(err => {
+            debugger
+        }).finally(() => {
+            console.log(getDetail.getAll())
         });
-        getDetail.has(1);
 
     </script>
 </head>
