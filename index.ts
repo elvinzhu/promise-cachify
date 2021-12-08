@@ -43,7 +43,7 @@ type TDefaultConfig = Omit<ICacheConfig<any>, 'persist' | 'key'> & {
 
 const UsedPersistKeys: string[] = [];
 const LogPrefix = '[promise-cache]';
-const StorePrefix = 'promise_cache_';
+const StorePrefix = 'PROMISE_CACHE_';
 
 export const DefaultKey = '__INTERNAL_USE__';
 
@@ -94,7 +94,7 @@ function generateKey(params: TInputBase): string {
 }
 
 class CacheHandler<TInput extends TInputBase, TOut> {
-  private _cacheMap: Map<TKey, ICacheItem>;
+  private _cacheMap: Map<TKey, ICacheItem> = new Map();
   private _config: Omit<ICacheConfig<TInput>, 'key'> & { key?: string | ICacheConfig<TInput>['key'] };
   private _persist?: string;
   private _resolver: (args: TInput) => Promise<TOut>;
@@ -107,8 +107,8 @@ class CacheHandler<TInput extends TInputBase, TOut> {
       if (UsedPersistKeys.includes(persist)) {
         logError(`duplicate "persist": ${persist}. Ignored.`);
       } else {
-        UsedPersistKeys.push(this._persist);
-        this._persist = persist;
+        UsedPersistKeys.push(persist);
+        this._persist = StorePrefix + persist;
       }
     } else if (persist) {
       logError(`invaid "persist": ${persist}. ignored.`);
@@ -118,28 +118,36 @@ class CacheHandler<TInput extends TInputBase, TOut> {
 
   private _persistCache() {
     if (this._persist) {
-      const newCacheMap: Map<TKey, TStoreItem> = new Map();
-      this._cacheMap.forEach(async (value, key) => {
-        const data = await value.data;
-        newCacheMap.set(key, { ...value, data });
-      });
-      const json = JSON.stringify(Array.from(newCacheMap.entries()));
-      this._getMediaHost().setItem(StorePrefix + this._persist, json);
+      if (this._cacheMap.size) {
+        const primiseArr: Promise<[string, string]>[] = [];
+        this._cacheMap.forEach((value, key) => {
+          primiseArr.push(value.data.then((res) => [key, res]));
+        });
+        Promise.all(primiseArr).then((data) => {
+          const json = JSON.stringify(data);
+          this._getMediaHost().setItem(this._persist, json);
+        });
+      } else {
+        this._getMediaHost().removeItem(this._persist);
+      }
     }
   }
 
   private _loadCache() {
     if (this._persist) {
       try {
-        const storeDataJson = JSON.parse(this._getMediaHost().getItem(this._persist)) as [TKey, string][];
-        storeDataJson.map((item) => {
-          const storeItem = JSON.parse(item[1]) as TStoreItem;
-          this._cacheMap.set(item[0], {
-            ...storeItem,
-            data: Promise.resolve(storeItem.data),
+        const storeDataJson = this._getMediaHost().getItem(this._persist);
+        if (storeDataJson) {
+          const storeData = JSON.parse(storeDataJson) as [TKey, string][];
+          storeData.map((item) => {
+            const storeItem = JSON.parse(item[1]) as TStoreItem;
+            this._cacheMap.set(item[0], {
+              ...storeItem,
+              data: Promise.resolve(storeItem.data),
+            });
           });
-        });
-        this._logDebug('init cache with', storeDataJson);
+          this._logDebug('init cache with', storeData);
+        }
       } catch (error) {
         logError(error);
       }
@@ -167,8 +175,6 @@ class CacheHandler<TInput extends TInputBase, TOut> {
    * @returns
    */
   do(params?: TInput): Promise<TOut> {
-    // lazy initialize
-    if (!this._cacheMap) this._cacheMap = new Map();
     let cacheKey = this.getCacheKey(params);
     if (this.has(cacheKey)) {
       // read cache
@@ -217,16 +223,14 @@ class CacheHandler<TInput extends TInputBase, TOut> {
 
   /**
    * clear cache.
-   * @param key cache key. use default value if missing
+   * @param key cache key. use default key if missing
    */
   clear(key?: TKey): void {
     key = normalizeKey(key);
     if (key) {
       this._cacheMap.delete(key);
-    } else {
-      this._cacheMap.clear();
+      this._persistCache();
     }
-    this._persistCache();
   }
 
   /**
@@ -234,9 +238,7 @@ class CacheHandler<TInput extends TInputBase, TOut> {
    */
   clearAll(): void {
     this._cacheMap.clear();
-    if (this._persist) {
-      this._getMediaHost().removeItem(StorePrefix + this._persist);
-    }
+    this._persistCache();
   }
 
   /**
@@ -249,7 +251,7 @@ class CacheHandler<TInput extends TInputBase, TOut> {
     const { maxAge } = this._config;
     const expire = maxAge > 0 ? Date.now() + maxAge * 1000 : 0;
     const cacheData = Promise.resolve(data).then(JSON.stringify); // DO NOT append .then or .catch
-    // must set in sync, or the concurrent request wont get it.
+    // must be set in sync, or the concurrent request wont get it.
     this._cacheMap.set(key, { expire, data: cacheData });
     this._logDebug(`set cache with key:${key}, expires at: ${new Date(expire)}`);
     if (maxAge > 0 && maxAge < 60 * 5) {
@@ -266,7 +268,7 @@ class CacheHandler<TInput extends TInputBase, TOut> {
 
   /**
    * retrieve cache data.
-   * @param key cache key. use default value if missing
+   * @param key cache key. use default key if missing
    * @returns
    */
   get(key?: TKey): Promise<TOut> | null {
@@ -287,7 +289,7 @@ class CacheHandler<TInput extends TInputBase, TOut> {
 
   /**
    * check if cache key exist.
-   * @param key cache key. use default value if missing
+   * @param key cache key. use default key if missing
    * @returns
    */
   has(key?: TKey): boolean {
