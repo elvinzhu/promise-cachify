@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc && rollup -c",
     "test": "jest --reporter=lcov --coverage",
-    "jest": "jest",
+    "jest": "jest --collect-coverage",
     "coverage": "codecov --disable=gcov,search -t ebd24777-2e7f-47c0-b00e-7fc5a07456a7 -f coverage/coverage-final.json"
   },
   "repository": {
@@ -44,5 +44,10 @@
   },
   "dependencies": {
     "tslib": "^2.3.1"
+  },
+  "jest": {
+    "collectCoverageFrom": [
+      "index.ts"
+    ]
   }
 }

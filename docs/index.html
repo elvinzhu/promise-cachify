@@ -33,18 +33,13 @@
 
         const getDetail = cache(
             (param) => {
-                return errorRequest('/api/getDetail', param);
+                return request('/api/getDetail', param);
             },
-            { maxAge: 10 }
+            { persist: 'key' }
         );
 
         const data = { id: 1 };
         const task = getDetail.do(data);
-        task.catch(err => {
-            debugger
-        }).finally(() => {
-            console.log(getDetail.getAll())
-        });
 
     </script>
 </head>
