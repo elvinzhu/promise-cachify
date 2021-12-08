@@ -45,10 +45,12 @@ const UsedPersistKeys: string[] = [];
 const LogPrefix = '[promise-cache]';
 const StorePrefix = 'promise_cache_';
 
+export const DefaultKey = '__INTERNAL_USE__';
+
 const DefaultConfig: TDefaultConfig = {
   maxAge: 0,
   debug: false,
-  key: '__INTERNAL_USE__',
+  key: DefaultKey,
 };
 
 function isPlainObject(target: any) {
@@ -91,106 +93,95 @@ function generateKey(params: TInputBase): string {
   return DefaultConfig.key;
 }
 
-/**
- * set default cache config.
- * @param config
- */
-export function setDefaults(config: TDefaultConfig) {
-  if (config && isPlainObject(config)) {
-    if ('persist' in config) {
-      logError(`you CAN NOT set default "persist". ignored.`);
-      // @ts-ignore avoid passing persist
-      delete config.persist;
+class CacheHandler<TInput extends TInputBase, TOut> {
+  private _cacheMap: Map<TKey, ICacheItem>;
+  private _config: Omit<ICacheConfig<TInput>, 'key'> & { key?: string | ICacheConfig<TInput>['key'] };
+  private _persist?: string;
+  private _resolver: (args: TInput) => Promise<TOut>;
+
+  constructor(resolver: (args: TInput) => Promise<TOut>, config: ICacheConfig<TInput>) {
+    this._config = { ...DefaultConfig, ...config };
+    this._resolver = resolver;
+    const { persist } = this._config;
+    if (persist && typeof persist === 'string') {
+      if (UsedPersistKeys.includes(persist)) {
+        logError(`duplicate "persist": ${persist}. Ignored.`);
+      } else {
+        UsedPersistKeys.push(this._persist);
+        this._persist = persist;
+      }
+    } else if (persist) {
+      logError(`invaid "persist": ${persist}. ignored.`);
     }
-    if (!config.key && typeof config.key !== 'undefined') {
-      logError(`invaid default "key": ${config.key}. ignored.`);
-      delete config.key;
-    }
-    Object.assign(DefaultConfig, config);
+    this._loadCache();
   }
-}
 
-/**
- * make the fetch result of the "resolver" cacheable.
- * @param resolver data fetcher
- * @param config cache config
- * @returns
- */
-export default function cache<TInput extends TInputBase, TOut>(resolver: (args: TInput) => Promise<TOut>, config?: ICacheConfig<TInput>) {
-  let cacheMap: Map<TKey, ICacheItem>;
-  let instanceConfig = { ...DefaultConfig, ...config };
-  const { persist, persistMedia, debug } = instanceConfig;
-  const isValidPersist = persist && typeof persist === 'string';
-
-  const persistCache = () => {
-    if (isValidPersist) {
+  private _persistCache() {
+    if (this._persist) {
       const newCacheMap: Map<TKey, TStoreItem> = new Map();
-      cacheMap.forEach(async (value, key) => {
+      this._cacheMap.forEach(async (value, key) => {
         const data = await value.data;
         newCacheMap.set(key, { ...value, data });
       });
       const json = JSON.stringify(Array.from(newCacheMap.entries()));
-      getMediaHost().setItem(StorePrefix + persist, json);
+      this._getMediaHost().setItem(StorePrefix + this._persist, json);
     }
-  };
+  }
 
-  const getMediaHost = () => {
-    if (persistMedia === 'localStorage') {
-      return window.localStorage;
-    }
-    return window.sessionStorage;
-  };
-
-  const logDebug = (...msg: any[]) => {
-    if (debug) {
-      console.log(`${LogPrefix}`, ...msg);
-    }
-  };
-
-  if (isValidPersist) {
-    if (UsedPersistKeys.includes(persist)) {
-      logError(`duplicate "persist": ${persist}. Ignored.`);
-    } else {
-      UsedPersistKeys.push(persist);
+  private _loadCache() {
+    if (this._persist) {
       try {
-        const storeDataJson = JSON.parse(getMediaHost().getItem(persist)) as [TKey, string][];
+        const storeDataJson = JSON.parse(this._getMediaHost().getItem(this._persist)) as [TKey, string][];
         storeDataJson.map((item) => {
           const storeItem = JSON.parse(item[1]) as TStoreItem;
-          cacheMap.set(item[0], {
+          this._cacheMap.set(item[0], {
             ...storeItem,
             data: Promise.resolve(storeItem.data),
           });
         });
-        logDebug('init cache with', storeDataJson);
+        this._logDebug('init cache with', storeDataJson);
       } catch (error) {
         logError(error);
       }
     }
-  } else if (persist) {
-    logError(`invaid "persist": ${persist}. ignored.`);
+  }
+
+  private _getMediaHost() {
+    const { persistMedia } = this._config;
+    if (persistMedia === 'localStorage') {
+      return window.localStorage;
+    }
+    return window.sessionStorage;
+  }
+
+  private _logDebug(...msg: any[]) {
+    const { debug } = this._config;
+    if (debug) {
+      console.log(`${LogPrefix}`, ...msg);
+    }
   }
 
   /**
-   * start call the "resolver" to resolve data.
+   * start to resolve data.
    * @param params
    * @returns
    */
-  function resolve(params?: TInput): Promise<TOut> {
+  do(params?: TInput): Promise<TOut> {
     // lazy initialize
-    if (!cacheMap) cacheMap = new Map();
-    let cacheKey = getCacheKey(params);
-    if (has(cacheKey)) {
+    if (!this._cacheMap) this._cacheMap = new Map();
+    let cacheKey = this.getCacheKey(params);
+    if (this.has(cacheKey)) {
       // read cache
-      logDebug(`using cache with key:${cacheKey}`);
-      return get(cacheKey);
+      this._logDebug(`using cache with key:${cacheKey}`);
+      return this.get(cacheKey);
     }
-    let cacheData = resolver(params);
+    let cacheData = this._resolver(params);
     if (cacheKey) {
       // set cache
-      set(cacheData, cacheKey);
-      cacheData = cacheData.catch((err) => {
-        cacheMap.delete(cacheKey);
-        logDebug('promise rejected, remove cache:', cacheKey, err);
+      this.set(cacheData, cacheKey);
+      cacheData = cacheData.catch((err: any) => {
+        this._cacheMap.delete(cacheKey);
+        this._logDebug('promise rejected, remove cache:', cacheKey, err);
         return Promise.reject(err);
       });
     }
@@ -202,8 +193,8 @@ export default function cache<TInput extends TInputBase, TOut>(resolver: (args: 
    * @param params
    * @returns
    */
-  function getCacheKey(params?: TInput): string | null {
-    const { key } = instanceConfig;
+  getCacheKey(params?: TInput): string | null {
+    const { key } = this._config;
     let cacheKey: TKey;
     if (typeof key === 'function') {
       // use custom key
@@ -212,12 +203,14 @@ export default function cache<TInput extends TInputBase, TOut>(resolver: (args: 
       // generate key from object
       cacheKey = generateKey(params);
     } else {
-      // give it a default value if match condition
+      // try give it a default value
       cacheKey = normalizeKey(params);
     }
     if (cacheKey && typeof cacheKey === 'string') {
       // only string key is allowed.
       return cacheKey;
+    } else {
+      logError(`invaid cache key: ${cacheKey}, only none-empty string is allowed.`);
     }
     return null;
   }
@@ -226,23 +219,23 @@ export default function cache<TInput extends TInputBase, TOut>(resolver: (args: 
    * clear cache.
    * @param key cache key. use default value if missing
    */
-  function clear(key?: TKey): void {
+  clear(key?: TKey): void {
     key = normalizeKey(key);
     if (key) {
-      cacheMap.delete(key);
+      this._cacheMap.delete(key);
     } else {
-      cacheMap.clear();
+      this._cacheMap.clear();
     }
-    persistCache();
+    this._persistCache();
   }
 
   /**
    * clear all
    */
-  function clearAll(): void {
-    cacheMap.clear();
-    if (isValidPersist) {
-      getMediaHost().removeItem(StorePrefix + persist);
+  clearAll(): void {
+    this._cacheMap.clear();
+    if (this._persist) {
+      this._getMediaHost().removeItem(StorePrefix + this._persist);
     }
   }
 
@@ -251,33 +244,35 @@ export default function cache<TInput extends TInputBase, TOut>(resolver: (args: 
    * @param value data
    * @param key cache key.
    */
-  function set(data: TOut | Promise<TOut>, key?: TKey) {
+  set(data: TOut | Promise<TOut>, key?: TKey) {
     key = normalizeKey(key);
-    const { maxAge } = instanceConfig;
+    const { maxAge } = this._config;
     const expire = maxAge > 0 ? Date.now() + maxAge * 1000 : 0;
     const cacheData = Promise.resolve(data).then(JSON.stringify); // DO NOT append .then or .catch
     // must set in sync, or the concurrent request wont get it.
-    cacheMap.set(key, { expire, data: cacheData });
-    logDebug(`set cache with key:${key}, expires at: ${new Date(expire)}`);
+    this._cacheMap.set(key, { expire, data: cacheData });
+    this._logDebug(`set cache with key:${key}, expires at: ${new Date(expire)}`);
     if (maxAge > 0 && maxAge < 60 * 5) {
       // relase memory ASAP if maxAge less 5 minute
-      setTimeout(() => clear(key), maxAge * 1000);
+      setTimeout(() => this.clear(key), maxAge * 1000);
     }
-    cacheData.then(persistCache).catch(() => {
-      // this is a new Promise instance,
-      // so hide the rejection
-    });
+    cacheData
+      .then(() => this._persistCache())
+      .catch(() => {
+        // this is a new Promise instance,
+        // so hide the rejection to avoid dirty the console
+      });
   }
 
   /**
-   * retrieve cached data.
+   * retrieve cache data.
    * @param key cache key. use default value if missing
    * @returns
    */
-  function get(key?: TKey): Promise<TOut> | null {
+  get(key?: TKey): Promise<TOut> | null {
     key = normalizeKey(key);
-    if (has(key)) {
-      return cacheMap.get(key).data.then((res) => JSON.parse(res) as TOut);
+    if (this.has(key)) {
+      return this._cacheMap.get(key).data.then((res) => JSON.parse(res) as TOut);
     }
     return null;
   }
@@ -286,8 +281,8 @@ export default function cache<TInput extends TInputBase, TOut>(resolver: (args: 
    * get all cached data. Be carefull to NOT dirty the data.
    * @returns
    */
-  function getAll() {
-    return cacheMap;
+  getAll() {
+    return this._cacheMap;
   }
 
   /**
@@ -295,17 +290,41 @@ export default function cache<TInput extends TInputBase, TOut>(resolver: (args: 
    * @param key cache key. use default value if missing
    * @returns
    */
-  function has(key?: TKey): boolean {
+  has(key?: TKey): boolean {
     key = normalizeKey(key);
-    if (cacheMap.has(key)) {
-      const data = cacheMap.get(key);
+    if (this._cacheMap.has(key)) {
+      const data = this._cacheMap.get(key);
       if (!data.expire || Date.now() <= data.expire) {
         return true;
       }
-      cacheMap.delete(key); // release memory
+      this._cacheMap.delete(key); // release memory
     }
     return false;
   }
+}
 
-  return { do: resolve, set, get, has, clear, clearAll, getAll, getCacheKey };
+/**
+ * set default cache config.
+ * @param config
+ */
+export function setDefaults(config: TDefaultConfig) {
+  if (config && isPlainObject(config)) {
+    // @ts-ignore avoid passing persist
+    const { persist, ...rest } = config;
+    if (!config.key && typeof config.key !== 'undefined') {
+      logError(`invaid default "key": ${config.key}. ignored.`);
+      delete config.key;
+    }
+    Object.assign(DefaultConfig, rest);
+  }
+}
+
+/**
+ * make the fetch result of the "resolver" cacheable.
+ * @param resolver data fetcher
+ * @param config cache config
+ * @returns
+ */
+export default function cache<TInput extends TInputBase, TOut>(resolver: (args: TInput) => Promise<TOut>, config?: ICacheConfig<TInput>) {
+  return new CacheHandler(resolver, config);
 }
