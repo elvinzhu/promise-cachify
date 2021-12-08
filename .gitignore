@@ -2,3 +2,4 @@ node_modules
 dist
 index.d.ts
 coverage
+package-lock.json
