@@ -22,7 +22,6 @@
   ],
   "author": "elvin zhu",
   "files": [
-    "dist/promise-cache.min.js",
     "dist/index.js",
     "dist/index.esm.js",
     "index.d.ts"
@@ -40,10 +39,10 @@
     "codecov": "^3.7.2",
     "jest": "^25.1.0",
     "rollup": "^1.31.1",
-    "typescript": "^3.7.5"
+    "typescript": "^3.7.5",
+    "@types/jest": "^27.0.3"
   },
   "dependencies": {
-    "@types/jest": "^27.0.3",
     "tslib": "^2.3.1"
   }
 }
