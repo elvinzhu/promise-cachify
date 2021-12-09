@@ -7,6 +7,11 @@ beforeEach(() => {
   sessionStorage.clear();
 });
 
+const consoleError = console.error;
+afterEach(() => {
+  console.error = consoleError;
+});
+
 test('getCacheKey work properly', () => {
   const getDetail = cache((param) => request('/api/getDetail', param));
   const data = { id: 1, name: 'xx', age: 1 };
@@ -45,6 +50,16 @@ test('use default key properly', async () => {
   const getDetail = cache(() => Promise.resolve(1));
   await getDetail.do();
   expect(getDetail.has(DefaultKey)).toBe(true);
+
+  const getDetail2 = cache(() => Promise.resolve(1));
+  await getDetail2.do({});
+
+  expect(getDetail2.has(DefaultKey)).toBe(true);
+
+  const getDetail3 = cache(() => Promise.resolve(1));
+  await getDetail3.do(undefined);
+
+  expect(getDetail2.has(DefaultKey)).toBe(true);
 });
 
 test('maxAge work properly', async () => {
@@ -60,6 +75,20 @@ test('maxAge work properly', async () => {
   expect(getDetail.has(cacheKey)).toBe(true);
   await sleep(201);
   expect(getDetail.has(cacheKey)).toBe(false);
+});
+
+test('function key work properly', async () => {
+  const getDetail = cache<{ id: number }, { success: boolean; data: any }>(
+    (param) => {
+      return request('/api/getDetail', param);
+    },
+    { key: ({ id }) => 'fn_key_test_' + id }
+  );
+  const data = { id: 120 };
+  await getDetail.do(data);
+  const cacheKey = getDetail.getCacheKey(data);
+  expect(cacheKey).toBe('fn_key_test_120');
+  expect(getDetail.has(cacheKey)).toBe(true);
 });
 
 test('set & get & clear & has & getAll & clearAll work properly', async () => {
@@ -91,6 +120,18 @@ test('set & get & clear & has & getAll & clearAll work properly', async () => {
 
   getDetail.clearAll();
   expect(getDetail.getAll().size).toBe(0);
+
+  expect(getDetail.get('a_not_exist_key')).toBe(null);
+
+  // auto remove after call "has"
+  // const getDetail2 = cache((param) => request('/api/getDetail', param), {
+  //   maxAge: 0.1,
+  // });
+  // getDetail2.do({ id: 1 });
+  // await sleep(110);
+  // expect(getDetail2.getAll().has('id=1')).toBe(true);
+  // expect(getDetail2.has('id=1')).toBe(false);
+  // expect(getDetail2.getAll().has('id=1')).toBe(false);
 });
 
 test('persist work properly', async () => {
@@ -113,7 +154,7 @@ test('persist work properly', async () => {
   await getDetail.do(data);
   await getDetail2.do(data);
 
-  const ret = [[getDetail.getCacheKey(data), JSON.stringify(resultData)]];
+  const ret = [[getDetail.getCacheKey(data), { expire: 0, data: JSON.stringify(resultData) }]];
 
   await sleep(0);
   // store properly
@@ -124,4 +165,61 @@ test('persist work properly', async () => {
   const res = await getDetail.do(data);
   expect(callFn).toBeCalledTimes(1);
   expect(res).toEqual(resultData);
+});
+
+test('duplicate "psersis" catched correctly', async () => {
+  const persist = 'duplicate_test';
+  console.error = jest.fn();
+  const getDetail = cache(() => Promise.resolve(1), { persist });
+  const getDetail2 = cache(() => Promise.resolve(2), { persist });
+  await getDetail.do();
+  await getDetail2.do();
+  expect(console.error).toHaveBeenCalledWith('[promise-cache]', expect.stringMatching('duplicate'));
+});
+
+test('invalid "psersis" catched correctly', async () => {
+  const persist = 321546897;
+  console.error = jest.fn();
+  // @ts-ignore
+  const getDetail = cache(() => Promise.resolve(1), { persist });
+  await getDetail.do();
+  expect(console.error).toHaveBeenCalledWith('[promise-cache]', expect.stringMatching('invaid'));
+});
+
+test('auto remove storage key correctly', async () => {
+  const getDetail = cache(() => Promise.resolve(1), { persist: 'auto_remove_test' });
+  await getDetail.do({ id: 1 });
+  await getDetail.do({ id: 2 });
+  await sleep(0);
+  expect(sessionStorage.length).toBe(1);
+  expect(getDetail.getAll().size).toBe(2);
+  getDetail.clear('id=1');
+  expect(getDetail.getAll().size).toBe(1);
+  getDetail.clear('id=2');
+  expect(getDetail.getAll().size).toBe(0);
+  expect(sessionStorage.length).toBe(0);
+});
+
+test('load store data correctly', async () => {
+  const persist = 'load_data_test';
+  sessionStorage.setItem(
+    'PROMISE_CACHE_' + persist,
+    JSON.stringify([
+      ['id=1', { expire: 0, data: JSON.stringify({ success: true, data: 1 }) }],
+      ['id=2', { expire: 0, data: JSON.stringify({ success: true, data: 2 }) }],
+    ])
+  );
+
+  const mockFn = jest.fn();
+  const getDetail = cache(
+    () => {
+      mockFn();
+      return Promise.resolve(1);
+    },
+    { persist }
+  );
+  expect(getDetail.has('id=1')).toBe(true);
+  expect(getDetail.has('id=2')).toBe(true);
+  await getDetail.do({ id: 1 });
+  expect(mockFn).not.toBeCalled();
 });

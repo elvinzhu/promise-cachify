@@ -31,16 +31,26 @@
             });
         }
 
+        const persist = 'load_data_test';
+        // sessionStorage.setItem(
+        //     'promise_cache_' + persist,
+        //     JSON.stringify([
+        //         ['id=1', JSON.stringify({ success: true, data: 1 })],
+        //         ['id=2', JSON.stringify({ success: true, data: 2 })],
+        //     ])
+        // );
+
         const getDetail = cache(
-            (param) => {
-                return request('/api/getDetail', param);
+            ({ id }) => {
+                return Promise.resolve({ success: true, data: id });
             },
-            { persist: 'key' }
+            { persist }
         );
 
-        const data = { id: 1 };
-        const task = getDetail.do(data);
 
+        console.log(getDetail.has('id=1'))
+        getDetail.do({ id: 1 });
+        getDetail.do({ id: 2 });
     </script>
 </head>
 
