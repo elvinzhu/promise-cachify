@@ -119,9 +119,9 @@ class CacheHandler<TInput extends TInputBase, TOut> {
   private _persistCache() {
     if (this._persist) {
       if (this._cacheMap.size) {
-        const primiseArr: Promise<[string, string]>[] = [];
+        const primiseArr: Promise<[TKey, TStoreItem]>[] = [];
         this._cacheMap.forEach((value, key) => {
-          primiseArr.push(value.data.then((res) => [key, res]));
+          primiseArr.push(value.data.then((res) => [key, { expire: value.expire, data: res }]));
         });
         Promise.all(primiseArr).then((data) => {
           const json = JSON.stringify(data);
@@ -138,18 +138,17 @@ class CacheHandler<TInput extends TInputBase, TOut> {
       try {
         const storeDataJson = this._getMediaHost().getItem(this._persist);
         if (storeDataJson) {
-          const storeData = JSON.parse(storeDataJson) as [TKey, string][];
-          storeData.map((item) => {
-            const storeItem = JSON.parse(item[1]) as TStoreItem;
-            this._cacheMap.set(item[0], {
-              ...storeItem,
-              data: Promise.resolve(storeItem.data),
+          const storeData = JSON.parse(storeDataJson) as [TKey, TStoreItem][];
+          storeData.map(([key, data]) => {
+            this._cacheMap.set(key, {
+              expire: data.expire,
+              data: Promise.resolve(data.data),
             });
           });
           this._logDebug('init cache with', storeData);
         }
       } catch (error) {
-        logError(error);
+        logError('load storage data failed.', error);
       }
     }
   }
@@ -253,7 +252,7 @@ class CacheHandler<TInput extends TInputBase, TOut> {
     const cacheData = Promise.resolve(data).then(JSON.stringify); // DO NOT append .then or .catch
     // must be set in sync, or the concurrent request wont get it.
     this._cacheMap.set(key, { expire, data: cacheData });
-    this._logDebug(`set cache with key:${key}, expires at: ${new Date(expire)}`);
+    this._logDebug(`set cache with key:${key}, expire at: ${expire > 0 ? new Date(expire) : 'never'}`);
     if (maxAge > 0 && maxAge < 60 * 5) {
       // relase memory ASAP if maxAge less 5 minute
       setTimeout(() => this.clear(key), maxAge * 1000);
