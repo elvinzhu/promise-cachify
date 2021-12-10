@@ -1,7 +1,9 @@
 type TKey = string;
-type TInputBase = { [key: string]: string | number | boolean | null | undefined };
+type TValue = string | number | boolean;
+type TArgsBase = [{ [key: string]: TValue }] | TValue[];
+type GetPromiseT<C extends Promise<any>> = C extends Promise<infer T> ? T : any;
 
-interface ICacheConfig<TInput extends TInputBase> {
+interface ICacheConfig<TArgs extends any[]> {
   /**
    * cache duration in seconds. pass 0 to make it never expires.
    * default: 0.
@@ -12,7 +14,7 @@ interface ICacheConfig<TInput extends TInputBase> {
    * must be unique for current instance.
    * default: \"__INTERNAL_USE__\".
    */
-  key?: (res: TInput) => string;
+  key: string | ((...args: TArgs) => string);
   /**
    * if to store into storage for next use.
    */
@@ -57,6 +59,17 @@ function isPlainObject(target: any) {
   return Object.prototype.toString.call(target) === '[object Object]';
 }
 
+function isString(target: any) {
+  return typeof target === 'string';
+}
+
+function isBadKeySegment(value: any) {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  return !['string', 'number', 'boolean'].includes(typeof value);
+}
+
 // var a = new Map([[NaN, 1], [false, 2], [null, 3], [undefined, 4]]);
 // console.log(JSON.stringify(Array.from(a.entries())))
 // => "[[null,1],[false,2],[null,3],[null,4]]"
@@ -80,26 +93,33 @@ function logError(...args: any[]) {
  * @param params
  * @returns
  */
-function generateKey(params: TInputBase): string {
-  if (isPlainObject(params)) {
-    const objKeys = Object.keys(params);
-    if (objKeys.length) {
-      return objKeys
-        .sort()
-        .map((key) => `${key}=${String(params[key])}`)
-        .join('&');
+function generateKey(args: any[]): string {
+  if (args && args.length) {
+    if (args.length === 1 && isPlainObject(args[0])) {
+      const theOnlyArg = args[0];
+      const objKeys = Object.keys(theOnlyArg);
+      if (objKeys.length && !Object.values(theOnlyArg).filter(isBadKeySegment).length) {
+        return objKeys
+          .sort()
+          .map((key) => `${key}=${String(theOnlyArg[key])}`)
+          .join('&');
+      }
+    } else if (Array.isArray(args)) {
+      if (args.length && !args.filter(isBadKeySegment).length) {
+        return args.map((item) => String(item)).join('_');
+      }
     }
   }
   return DefaultConfig.key;
 }
 
-class CacheHandler<TInput extends TInputBase, TOut> {
+class CacheHandler<TArgs extends any[], TOut> {
   private _cacheMap: Map<TKey, ICacheItem> = new Map();
-  private _config: Omit<ICacheConfig<TInput>, 'key'> & { key?: string | ICacheConfig<TInput>['key'] };
+  private _config: ICacheConfig<TArgs>;
   private _persist?: string;
-  private _resolver: (args: TInput) => Promise<TOut>;
+  private _resolver: (...args: TArgs) => Promise<TOut>;
 
-  constructor(resolver: (args: TInput) => Promise<TOut>, config: ICacheConfig<TInput>) {
+  constructor(resolver: (...args: TArgs) => Promise<TOut>, config: ICacheConfig<TArgs>) {
     this._config = { ...DefaultConfig, ...config };
     this._resolver = resolver;
     const { persist } = this._config;
@@ -173,14 +193,14 @@ class CacheHandler<TInput extends TInputBase, TOut> {
    * @param params
    * @returns
    */
-  do(params?: TInput): Promise<TOut> {
-    let cacheKey = this.getCacheKey(params);
+  do(...args: TArgs): Promise<TOut> {
+    let cacheKey = this.getCacheKey(...args);
     if (this.has(cacheKey)) {
       // read cache
       this._logDebug(`using cache with key:${cacheKey}`);
       return this.get(cacheKey);
     }
-    let cacheData = this._resolver(params);
+    let cacheData = this._resolver(...args);
     if (cacheKey) {
       // set cache
       this.set(cacheData, cacheKey);
@@ -194,24 +214,27 @@ class CacheHandler<TInput extends TInputBase, TOut> {
   }
 
   /**
-   * get cache key per TInput
+   * get cache key per TArgs
    * @param params
    * @returns
    */
-  getCacheKey(params?: TInput): string | null {
+  getCacheKey(...args: TArgs): string | null {
     const { key } = this._config;
     let cacheKey: TKey;
     if (typeof key === 'function') {
-      // use custom key
-      cacheKey = key(params);
-    } else if (isPlainObject(params)) {
-      // generate key from object
-      cacheKey = generateKey(params);
+      // user generated key
+      cacheKey = key(...args);
+    } else if (args.length) {
+      // has argument try to auto generate key
+      cacheKey = generateKey(args);
+    } else if (isString(key)) {
+      // static custom key
+      return key;
     } else {
-      // try give it a default value
-      cacheKey = normalizeKey(params);
+      // no arguments, give it a default value
+      return DefaultKey;
     }
-    if (cacheKey && typeof cacheKey === 'string') {
+    if (cacheKey && isString(cacheKey)) {
       // only string key is allowed.
       return cacheKey;
     } else {
@@ -312,7 +335,7 @@ export function setDefaults(config: TDefaultConfig) {
   if (config && isPlainObject(config)) {
     // @ts-ignore avoid passing persist
     const { persist, ...rest } = config;
-    if (!config.key && typeof config.key !== 'undefined') {
+    if ((!config.key && typeof config.key !== 'undefined') || !isString(config.key)) {
       logError(`invaid default "key": ${config.key}. ignored.`);
       delete config.key;
     }
@@ -326,6 +349,15 @@ export function setDefaults(config: TDefaultConfig) {
  * @param config cache config
  * @returns
  */
-export default function cache<TInput extends TInputBase, TOut>(resolver: (args: TInput) => Promise<TOut>, config?: ICacheConfig<TInput>) {
-  return new CacheHandler(resolver, config);
+export default function withCache<T extends (...args: any) => Promise<any>>(resolver: T, config?: ICacheConfig<Parameters<T>>) {
+  return new CacheHandler<Parameters<T>, GetPromiseT<ReturnType<T>>>(resolver, config);
 }
+
+// function request(id: number, name: string) {
+//   return Promise.resolve(1);
+// }
+
+// type Out = Parameters<Parameters<ReturnType<typeof request>['then']>[0]>[0];
+// const getDetail = withCache(request);
+
+// getDetail.do(1, 'zyy');

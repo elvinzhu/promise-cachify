@@ -31,26 +31,13 @@
             });
         }
 
-        const persist = 'load_data_test';
-        // sessionStorage.setItem(
-        //     'promise_cache_' + persist,
-        //     JSON.stringify([
-        //         ['id=1', JSON.stringify({ success: true, data: 1 })],
-        //         ['id=2', JSON.stringify({ success: true, data: 2 })],
-        //     ])
-        // );
-
         const getDetail = cache(
             ({ id }) => {
                 return Promise.resolve({ success: true, data: id });
             },
-            { persist }
         );
 
-
-        console.log(getDetail.has('id=1'))
-        getDetail.do({ id: 1 });
-        getDetail.do({ id: 2 });
+        getDetail.getCacheKey({ id: 3 })
     </script>
 </head>
 
