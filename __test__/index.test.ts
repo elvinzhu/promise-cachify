@@ -7,23 +7,56 @@ beforeEach(() => {
   sessionStorage.clear();
 });
 
+const storePrefix = '[promise-cache]';
 const consoleError = console.error;
 afterEach(() => {
   console.error = consoleError;
 });
 
 test('getCacheKey work properly', () => {
-  const getDetail = cache((param) => request('/api/getDetail', param));
-  const data = { id: 1, name: 'xx', age: 1 };
-  expect(getDetail.getCacheKey(data)).toBe('age=1&id=1&name=xx');
+  const getDetail = cache((...param: any[]) => request('/api/getDetail', param));
+  // simple object
+  expect(getDetail.getCacheKey({ id: 1, name: 'xx', age: 1 })).toBe('age=$-1&id=$-1&name=xx'); // note the order
+  expect(getDetail.getCacheKey({ id: null, name: 'xx', age: undefined })).toBe('age=$-undefined&id=$-null&name=xx');
+  expect(getDetail.getCacheKey({ id: null, name: 'xx', age: undefined })).toBe('age=$-undefined&id=$-null&name=xx');
+  expect(getDetail.getCacheKey('1', [3], { id: 1, name: null })).toBe('1&$-3&id=$-1&name=$-null');
+  // complex object is not allowed
+  expect(getDetail.getCacheKey({ id: 1, d: { name: 'el' } })).toBeNull();
+  expect(getDetail.getCacheKey([{ d: { name: 'el' } }])).toBeNull();
+  expect(getDetail.getCacheKey(new Map())).toBeNull();
+  // mutiple simple arguments
+  expect(getDetail.getCacheKey(1, true, 'name')).toBe('$-1&$-true&name');
+  expect(getDetail.getCacheKey('1', 'true', 'name')).toBe('1&true&name');
+  expect(getDetail.getCacheKey('1', null, undefined)).toBe('1&$-null&$-undefined');
+  // undefined
+  expect(getDetail.getCacheKey(undefined, undefined)).toBe('$-undefined&$-undefined');
+  expect(getDetail.getCacheKey('undefined')).toBe('undefined');
+  expect(getDetail.getCacheKey()).toBe(DefaultKey);
+  expect(getDetail.getCacheKey(undefined)).toBe(DefaultKey);
+  // null
+  expect(getDetail.getCacheKey(null)).toBe('$-null');
+  expect(getDetail.getCacheKey('null')).toBe('null');
+  // NaN
+  expect(getDetail.getCacheKey(NaN)).toBe('$-NaN');
+  expect(getDetail.getCacheKey('NaN')).toBe('NaN');
+  // empty array
+  expect(getDetail.getCacheKey([])).toBe('[]');
+  expect(getDetail.getCacheKey([undefined])).toBe('$-undefined');
+  expect(getDetail.getCacheKey([null])).toBe('$-null');
+  // override default key;
+  const getDetail2 = cache(() => request('/api/getDetail', 1), { key: '999' });
+  expect(getDetail2.getCacheKey()).toBe('999');
 });
 
 test('cache work perperty with concurrent call', async () => {
   const getDetailCall = jest.fn();
-  const getDetail = cache<{ id: number }, { success: boolean; data: any }>(({ id }) => {
-    getDetailCall();
-    return request('/api/getDetail', { id });
-  });
+  const getDetail = cache(
+    ({ id }: { id: number }) => {
+      getDetailCall();
+      return request('/api/getDetail', { id });
+    },
+    { debug: true }
+  );
   const task = getDetail.do({ id: 1 });
   const task2 = getDetail.do({ id: 1 });
   expect(getDetailCall.call.length).toBe(1);
@@ -33,7 +66,7 @@ test('cache work perperty with concurrent call', async () => {
 });
 
 test('test with unhandledRejected exception', () => {
-  const getDetail = cache<{ id: number }, { success: boolean; data: any }>((param) => {
+  const getDetail = cache((param) => {
     return errorRequest('/api/getDetail', param);
   });
   const data = { id: 1 };
@@ -52,18 +85,20 @@ test('use default key properly', async () => {
   expect(getDetail.has(DefaultKey)).toBe(true);
 
   const getDetail2 = cache(() => Promise.resolve(1));
+  // empty object
+  // @ts-ignore
   await getDetail2.do({});
-
-  expect(getDetail2.has(DefaultKey)).toBe(true);
+  expect(getDetail2.has(DefaultKey)).toBe(false);
 
   const getDetail3 = cache(() => Promise.resolve(1));
+  // @ts-ignore
   await getDetail3.do(undefined);
 
-  expect(getDetail2.has(DefaultKey)).toBe(true);
+  expect(getDetail3.has(DefaultKey)).toBe(true);
 });
 
 test('maxAge work properly', async () => {
-  const getDetail = cache<{ id: number }, { success: boolean; data: any }>(
+  const getDetail = cache(
     (param) => {
       return request('/api/getDetail', param);
     },
@@ -78,7 +113,7 @@ test('maxAge work properly', async () => {
 });
 
 test('function key work properly', async () => {
-  const getDetail = cache<{ id: number }, { success: boolean; data: any }>(
+  const getDetail = cache(
     (param) => {
       return request('/api/getDetail', param);
     },
@@ -124,14 +159,14 @@ test('set & get & clear & has & getAll & clearAll work properly', async () => {
   expect(getDetail.get('a_not_exist_key')).toBe(null);
 
   // auto remove after call "has"
-  // const getDetail2 = cache((param) => request('/api/getDetail', param), {
-  //   maxAge: 0.1,
-  // });
-  // getDetail2.do({ id: 1 });
-  // await sleep(110);
-  // expect(getDetail2.getAll().has('id=1')).toBe(true);
-  // expect(getDetail2.has('id=1')).toBe(false);
-  // expect(getDetail2.getAll().has('id=1')).toBe(false);
+  const getDetail2 = cache((param) => request('/api/getDetail', param), {
+    maxAge: 0.1,
+  });
+  getDetail2.do({ id: '1' });
+  await sleep(110);
+  expect(getDetail2.getAll().has('id=1')).toBe(true);
+  expect(getDetail2.has('id=1')).toBe(false);
+  expect(getDetail2.getAll().has('id=1')).toBe(false);
 });
 
 test('persist work properly', async () => {
@@ -167,35 +202,35 @@ test('persist work properly', async () => {
   expect(res).toEqual(resultData);
 });
 
-test('duplicate "psersis" catched correctly', async () => {
+test('duplicate "persist" catched correctly', async () => {
   const persist = 'duplicate_test';
   console.error = jest.fn();
   const getDetail = cache(() => Promise.resolve(1), { persist });
   const getDetail2 = cache(() => Promise.resolve(2), { persist });
   await getDetail.do();
   await getDetail2.do();
-  expect(console.error).toHaveBeenCalledWith('[promise-cache]', expect.stringMatching('duplicate'));
+  expect(console.error).toHaveBeenCalledWith(storePrefix, expect.stringMatching('duplicate'));
 });
 
-test('invalid "psersis" catched correctly', async () => {
+test('invalid "persist" catched correctly', async () => {
   const persist = 321546897;
   console.error = jest.fn();
   // @ts-ignore
   const getDetail = cache(() => Promise.resolve(1), { persist });
   await getDetail.do();
-  expect(console.error).toHaveBeenCalledWith('[promise-cache]', expect.stringMatching('invaid'));
+  expect(console.error).toHaveBeenCalledWith(storePrefix, expect.stringMatching('invaid'));
 });
 
 test('auto remove storage key correctly', async () => {
-  const getDetail = cache(() => Promise.resolve(1), { persist: 'auto_remove_test' });
+  const getDetail = cache((param: { id: number }) => Promise.resolve(1), { persist: 'auto_remove_test' });
   await getDetail.do({ id: 1 });
   await getDetail.do({ id: 2 });
   await sleep(0);
   expect(sessionStorage.length).toBe(1);
   expect(getDetail.getAll().size).toBe(2);
-  getDetail.clear('id=1');
+  getDetail.clear(getDetail.getCacheKey({ id: 1 }));
   expect(getDetail.getAll().size).toBe(1);
-  getDetail.clear('id=2');
+  getDetail.clear(getDetail.getCacheKey({ id: 2 }));
   expect(getDetail.getAll().size).toBe(0);
   expect(sessionStorage.length).toBe(0);
 });
@@ -212,7 +247,7 @@ test('load store data correctly', async () => {
 
   const mockFn = jest.fn();
   const getDetail = cache(
-    () => {
+    (param) => {
       mockFn();
       return Promise.resolve(1);
     },
@@ -220,6 +255,32 @@ test('load store data correctly', async () => {
   );
   expect(getDetail.has('id=1')).toBe(true);
   expect(getDetail.has('id=2')).toBe(true);
-  await getDetail.do({ id: 1 });
+  await getDetail.do({ id: '1' }); // not { id: 1 }
   expect(mockFn).not.toBeCalled();
 });
+
+test('load dirty store data correctly', async () => {
+  const persist = 'load_data_test2';
+  sessionStorage.setItem('PROMISE_CACHE_' + persist, 'this is a piece of dirty data');
+  const mockFn = (console.error = jest.fn());
+  const getDetail = cache((param) => Promise.resolve(1), { persist });
+  expect(getDetail.getAll().size).toBe(0);
+  expect(mockFn).toHaveBeenCalled();
+});
+
+// test('setDefaults works properly', () => {
+//   console.error = jest.fn();
+//   // error cases
+//   setDefaults({ key: '' });
+//   expect(console.error).toBeCalledWith(storePrefix, `invaid default "key": ${''}. ignored.`);
+//   //@ts-ignore
+//   setDefaults({ key: 456 });
+//   expect(console.error).toBeCalledWith(storePrefix, `invaid default "key": ${456}. ignored.`);
+
+//   // correct cases
+//   const defKey = '__test__';
+//   setDefaults({ key: defKey });
+//   const getDetail = cache(() => Promise.resolve(0));
+//   getDetail.do();
+//   expect(getDetail.has(defKey));
+// });

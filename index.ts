@@ -1,6 +1,6 @@
 type TKey = string;
-type TValue = string | number | boolean;
-type TArgsBase = [{ [key: string]: TValue }] | TValue[];
+// type TValue = string | number | boolean;
+// type TArgsBase = [{ [key: string]: TValue }] | TValue[];
 type GetPromiseT<C extends Promise<any>> = C extends Promise<infer T> ? T : any;
 
 interface ICacheConfig<TArgs extends any[]> {
@@ -14,9 +14,9 @@ interface ICacheConfig<TArgs extends any[]> {
    * must be unique for current instance.
    * default: \"__INTERNAL_USE__\".
    */
-  key: string | ((...args: TArgs) => string);
+  key?: string | ((this: CacheHandler<TArgs, any>, ...args: TArgs) => string);
   /**
-   * if to store into storage for next use.
+   * if to store into storage.
    */
   persist?: string;
   /**
@@ -25,7 +25,7 @@ interface ICacheConfig<TArgs extends any[]> {
    */
   persistMedia?: 'localStorage' | 'sessionStorage';
   /**
-   * if to log some info for debug.
+   * if to log some info for debug purpose.
    */
   debug?: boolean;
 }
@@ -36,12 +36,7 @@ interface ICacheItem {
 }
 
 type TStoreItem = Omit<ICacheItem, 'data'> & { data: string };
-type TDefaultConfig = Omit<ICacheConfig<any>, 'persist' | 'key'> & {
-  /**
-   * default cache key.
-   */
-  key?: string;
-};
+type TDefaultConfig = Omit<ICacheConfig<any>, 'persist' | 'key'>;
 
 const UsedPersistKeys: string[] = [];
 const LogPrefix = '[promise-cache]';
@@ -52,16 +47,15 @@ export const DefaultKey = '__INTERNAL_USE__';
 const DefaultConfig: TDefaultConfig = {
   maxAge: 0,
   debug: false,
-  key: DefaultKey,
 };
 
 function isPlainObject(target: any) {
   return Object.prototype.toString.call(target) === '[object Object]';
 }
 
-function isString(target: any) {
-  return typeof target === 'string';
-}
+// function isString(target: any) {
+//   return typeof target === 'string';
+// }
 
 function isBadKeySegment(value: any) {
   if (value === null || value === undefined) {
@@ -75,42 +69,74 @@ function isBadKeySegment(value: any) {
 // => "[[null,1],[false,2],[null,3],[null,4]]"
 
 /**
- * rewrite undefined & null to default key;
+ * rewrite undefined to default key;
  * @param key
  * @returns
  */
 function normalizeKey(key: any) {
-  return key === undefined || key === null ? DefaultConfig.key : key;
+  return key === undefined ? DefaultKey : key;
 }
 
 function logError(...args: any[]) {
   console.error(`${LogPrefix}`, ...args);
 }
 
+function logDebug(debug: boolean, ...msg: any[]) {
+  if (debug) {
+    console.log(`${LogPrefix}`, ...msg);
+  }
+}
+
 /**
- * generate cache key from object.
- * NOTE: sub-object will not work properly;
- * @param params
+ * generate cache key from simple object. eg. array/object with values of "string | number | boolean".
+ * only support one-level nested object
+ * otherwise will get null
+ * @param args
  * @returns
  */
-function generateKey(args: any[]): string {
-  if (args && args.length) {
-    if (args.length === 1 && isPlainObject(args[0])) {
-      const theOnlyArg = args[0];
-      const objKeys = Object.keys(theOnlyArg);
-      if (objKeys.length && !Object.values(theOnlyArg).filter(isBadKeySegment).length) {
-        return objKeys
-          .sort()
-          .map((key) => `${key}=${String(theOnlyArg[key])}`)
-          .join('&');
+function generateKey(args: any[]): string | null {
+  if (args.length === 1 && args[0] === undefined) {
+    return DefaultKey;
+  }
+  let keySegments: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const currentArg = args[i];
+    if (isPlainObject(currentArg)) {
+      const objKeys = Object.keys(currentArg);
+      if (objKeys.length) {
+        if (Object.values(currentArg).filter(isBadKeySegment).length) {
+          return null;
+        } else {
+          keySegments = keySegments.concat(objKeys.sort().map((key) => `${key}=${transformKey(currentArg[key])}`));
+        }
+      } else {
+        keySegments.push('{}');
       }
-    } else if (Array.isArray(args)) {
-      if (args.length && !args.filter(isBadKeySegment).length) {
-        return args.map((item) => String(item)).join('_');
+    } else if (Array.isArray(currentArg)) {
+      if (currentArg.length) {
+        if (currentArg.filter(isBadKeySegment).length) {
+          return null;
+        } else {
+          keySegments.push(currentArg.map(transformKey).join('_'));
+        }
+      } else {
+        keySegments.push('[]');
       }
+    } else if (!isBadKeySegment(currentArg)) {
+      keySegments.push(transformKey(currentArg));
     }
   }
-  return DefaultConfig.key;
+  if (keySegments.length) {
+    return keySegments.join('&');
+  }
+  return null;
+}
+
+function transformKey(key: any): string | null {
+  if (typeof key === 'string') {
+    return key;
+  }
+  return isBadKeySegment(key) ? null : `$-${String(key)}`;
 }
 
 class CacheHandler<TArgs extends any[], TOut> {
@@ -165,7 +191,7 @@ class CacheHandler<TArgs extends any[], TOut> {
               data: Promise.resolve(data.data),
             });
           });
-          this._logDebug('init cache with', storeData);
+          logDebug(this._config.debug, 'init cache with', storeData);
         }
       } catch (error) {
         logError('load storage data failed.', error);
@@ -181,23 +207,17 @@ class CacheHandler<TArgs extends any[], TOut> {
     return window.sessionStorage;
   }
 
-  private _logDebug(...msg: any[]) {
-    const { debug } = this._config;
-    if (debug) {
-      console.log(`${LogPrefix}`, ...msg);
-    }
-  }
-
   /**
    * start to resolve data.
    * @param params
    * @returns
    */
   do(...args: TArgs): Promise<TOut> {
+    const { debug } = this._config;
     let cacheKey = this.getCacheKey(...args);
-    if (this.has(cacheKey)) {
+    if (cacheKey && this.has(cacheKey)) {
       // read cache
-      this._logDebug(`using cache with key:${cacheKey}`);
+      logDebug(debug, `using cache with key:${cacheKey}`);
       return this.get(cacheKey);
     }
     let cacheData = this._resolver(...args);
@@ -206,9 +226,11 @@ class CacheHandler<TArgs extends any[], TOut> {
       this.set(cacheData, cacheKey);
       cacheData = cacheData.catch((err: any) => {
         this._cacheMap.delete(cacheKey);
-        this._logDebug('promise rejected, remove cache:', cacheKey, err);
+        logDebug(debug, 'promise rejected, remove cache:', cacheKey, err);
         return Promise.reject(err);
       });
+    } else {
+      logDebug(debug, `cache key is invalid:`, cacheKey, '. ignored.');
     }
     return cacheData;
   }
@@ -221,26 +243,26 @@ class CacheHandler<TArgs extends any[], TOut> {
   getCacheKey(...args: TArgs): string | null {
     const { key } = this._config;
     let cacheKey: TKey;
-    if (typeof key === 'function') {
-      // user generated key
-      cacheKey = key(...args);
+    // custom key has the first priority;
+    if (key !== undefined) {
+      if (typeof key === 'function') {
+        // user generated key
+        cacheKey = transformKey(key.apply(this, args));
+      } else if (!isBadKeySegment(key)) {
+        // static custom key
+        cacheKey = transformKey(key);
+      } else {
+        // invalid key, ignored.
+        cacheKey = null;
+      }
     } else if (args.length) {
-      // has argument try to auto generate key
+      // have arguments. try to auto generate key
       cacheKey = generateKey(args);
-    } else if (isString(key)) {
-      // static custom key
-      return key;
     } else {
       // no arguments, give it a default value
-      return DefaultKey;
+      cacheKey = DefaultKey;
     }
-    if (cacheKey && isString(cacheKey)) {
-      // only string key is allowed.
-      return cacheKey;
-    } else {
-      logError(`invaid cache key: ${cacheKey}, only none-empty string is allowed.`);
-    }
-    return null;
+    return cacheKey;
   }
 
   /**
@@ -270,16 +292,12 @@ class CacheHandler<TArgs extends any[], TOut> {
    */
   set(data: TOut | Promise<TOut>, key?: TKey) {
     key = normalizeKey(key);
-    const { maxAge } = this._config;
+    const { maxAge, debug } = this._config;
     const expire = maxAge > 0 ? Date.now() + maxAge * 1000 : 0;
     const cacheData = Promise.resolve(data).then(JSON.stringify); // DO NOT append .then or .catch
     // must be set in sync, or the concurrent request wont get it.
     this._cacheMap.set(key, { expire, data: cacheData });
-    this._logDebug(`set cache with key:${key}, expire at: ${expire > 0 ? new Date(expire) : 'never'}`);
-    if (maxAge > 0 && maxAge < 60 * 5) {
-      // relase memory ASAP if maxAge less 5 minute
-      setTimeout(() => this.clear(key), maxAge * 1000);
-    }
+    logDebug(debug, `set cache with key:${key}, expire at: ${expire > 0 ? new Date(expire) : 'never'}`);
     cacheData
       .then(() => this._persistCache())
       .catch(() => {
@@ -333,12 +351,8 @@ class CacheHandler<TArgs extends any[], TOut> {
  */
 export function setDefaults(config: TDefaultConfig) {
   if (config && isPlainObject(config)) {
-    // @ts-ignore avoid passing persist
-    const { persist, ...rest } = config;
-    if ((!config.key && typeof config.key !== 'undefined') || !isString(config.key)) {
-      logError(`invaid default "key": ${config.key}. ignored.`);
-      delete config.key;
-    }
+    // @ts-ignore avoid passing persist/key
+    const { persist, key, ...rest } = config;
     Object.assign(DefaultConfig, rest);
   }
 }
