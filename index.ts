@@ -56,9 +56,9 @@ function isPlainObject(target: any) {
   return Object.prototype.toString.call(target) === '[object Object]';
 }
 
-// function isString(target: any) {
-//   return typeof target === 'string';
-// }
+function isString(target: any) {
+  return typeof target === 'string';
+}
 
 function isBadKeySegment(value: any) {
   if (value === null || value === undefined) {
@@ -81,12 +81,12 @@ function normalizeKey(key: any) {
 }
 
 function logError(...args: any[]) {
-  console.error(`${LogPrefix}`, ...args);
+  console.error(`${LogPrefix}`, new Date().toLocaleTimeString(), '--', ...args);
 }
 
-function logDebug(debug: boolean, ...msg: any[]) {
+function logDebug(debug: boolean, ...args: any[]) {
   if (debug) {
-    console.log(`${LogPrefix}`, ...msg);
+    console.log(`%c${LogPrefix}`, 'color: #2f54eb', new Date().toLocaleTimeString(), '--', ...args);
   }
 }
 
@@ -227,11 +227,6 @@ class CacheHandler<TArgs extends any[], TOut> {
     if (cacheKey) {
       // set cache
       this.set(cacheData, cacheKey);
-      cacheData = cacheData.catch((err: any) => {
-        this._cacheMap.delete(cacheKey);
-        logDebug(debug, 'promise rejected, remove cache:', cacheKey, err);
-        return Promise.reject(err);
-      });
     } else {
       logDebug(debug, `cache key is invalid`);
     }
@@ -294,19 +289,24 @@ class CacheHandler<TArgs extends any[], TOut> {
    * @param key cache key.
    */
   set(data: TOut | Promise<TOut>, key?: TKey) {
+    if (key !== undefined && !isString(key)) return false;
     key = normalizeKey(key);
     const { maxAge, debug } = this._config;
     const expire = maxAge > 0 ? Date.now() + maxAge * 1000 : 0;
-    const cacheData = Promise.resolve(data).then(JSON.stringify); // DO NOT append .then or .catch
+    const cacheData = Promise.resolve(data).then((res) => {
+      this._persistCache();
+      return JSON.stringify(res);
+    });
     // must be set in sync, or the concurrent request wont get it.
     this._cacheMap.set(key, { expire, data: cacheData });
     logDebug(debug, `set cache with key:${key}, expire at: ${expire > 0 ? new Date(expire) : 'never'}`);
-    cacheData
-      .then(() => this._persistCache())
-      .catch(() => {
-        // this is a new Promise instance,
-        // so hide the rejection to avoid dirty the console
-      });
+    // not chained catch to make it being executed earlier than user's catch
+    // or user won't be able to manipulate the cache item;
+    cacheData.catch((err: any) => {
+      this._cacheMap.delete(key);
+      logDebug(debug, 'promise rejected, remove cache:', key, err);
+    });
+    return true;
   }
 
   /**
