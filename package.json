@@ -1,5 +1,5 @@
 {
-  "name": "promise-cache",
+  "name": "promise-cachify",
   "version": "1.0.0",
   "description": "",
   "main": "dist/index.js",
@@ -8,11 +8,11 @@
     "build": "tsc && rollup -c",
     "test": "jest --reporter=lcov --coverage",
     "jest": "jest --collect-coverage",
-    "coverage": "codecov --disable=gcov,search -t ebd24777-2e7f-47c0-b00e-7fc5a07456a7 -f coverage/coverage-final.json"
+    "coverage": "codecov --disable=gcov,search -t 990bb158-3ffc-40d4-8803-b21075f074f1 -f coverage/coverage-final.json"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/elvinzhu/promise-cache.git"
+    "url": "git+https://github.com/elvinzhu/promise-cachify.git"
   },
   "keywords": [
     "缓存",
@@ -30,9 +30,9 @@
   "sideEffects": false,
   "typings": "./index.d.ts",
   "bugs": {
-    "url": "https://github.com/elvinzhu/promise-cache/issues"
+    "url": "https://github.com/elvinzhu/promise-cachify/issues"
   },
-  "homepage": "https://github.com/elvinzhu/promise-cache/blob/main/README.md",
+  "homepage": "https://github.com/elvinzhu/promise-cachify/blob/main/README.md",
   "devDependencies": {
     "@babel/preset-env": "^7.11.0",
     "@babel/preset-typescript": "^7.10.4",
