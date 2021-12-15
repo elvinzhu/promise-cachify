@@ -16,9 +16,10 @@
   },
   "keywords": [
     "缓存",
-    "接口缓存",
+    "异步",
     "cache",
-    "api cache"
+    "promise",
+    "async"
   ],
   "author": "elvin zhu",
   "files": [
