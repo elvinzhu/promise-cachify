@@ -81,6 +81,16 @@ test('cache work perperty with concurrent call', async () => {
   expect(res1).toEqual(res2);
 });
 
+test('data isolated correctly', async () => {
+  const getDetail = cache((param) => {
+    return request('/api/getDetail', param);
+  });
+  const data1 = await getDetail.do({ id: 1 });
+  data1.data = 900;
+  const data2 = await getDetail.do({ id: 1 });
+  expect(data2.data).not.toEqual(data1.data);
+});
+
 test('test with unhandledRejected exception', () => {
   const getDetail = cache((param) => {
     return errorRequest('/api/getDetail', param);
@@ -151,7 +161,7 @@ test('set & get & clear & has & getAll & clearAll work properly', async () => {
   const noneDefaultKey2 = 'xx=224';
   const data2 = { success: false, data: 2 };
 
-  getDetail.set(data);
+  expect(getDetail.set(data)).toBe(true);
   getDetail.set(data1, noneDefaultKey1);
   getDetail.set(data2, noneDefaultKey2);
   expect(getDetail.getAll().size).toBe(3);
@@ -173,9 +183,11 @@ test('set & get & clear & has & getAll & clearAll work properly', async () => {
   expect(getDetail.getAll().size).toBe(0);
 
   expect(getDetail.get('a_not_exist_key')).toBe(null);
-  // clear invalid key
-  // @ts-ignore
+  // @ts-ignore clear invalid key
   getDetail.clear(NaN);
+
+  // @ts-ignore set width invalid key
+  expect(getDetail.set(data, 900)).toBe(false);
 });
 
 test('auto remove after call "has"', async () => {
@@ -225,21 +237,21 @@ test('persist work properly', async () => {
 
 test('duplicate "persist" catched correctly', async () => {
   const persist = 'duplicate_test';
-  console.error = jest.fn();
+  const mockFn = (console.error = jest.fn());
   const getDetail = cache(() => Promise.resolve(1), { persist });
   const getDetail2 = cache(() => Promise.resolve(2), { persist });
   await getDetail.do();
   await getDetail2.do();
-  expect(console.error).toHaveBeenCalledWith(storePrefix, expect.stringMatching('duplicate'));
+  expect(mockFn.mock.calls[0][3]).toContain('duplicate');
 });
 
 test('invalid "persist" catched correctly', async () => {
   const persist = 321546897;
-  console.error = jest.fn();
+  const mockFn = (console.error = jest.fn());
   // @ts-ignore
   const getDetail = cache(() => Promise.resolve(1), { persist });
   await getDetail.do();
-  expect(console.error).toHaveBeenCalledWith(storePrefix, expect.stringMatching('invaid'));
+  expect(mockFn.mock.calls[0][3]).toContain('invaid');
 });
 
 test('auto remove storage key correctly', async () => {
@@ -308,5 +320,5 @@ test('setDefaults works properly', async () => {
   expect(localStorage.length).toBe(1);
   expect(sessionStorage.length).toBe(0);
   // invalid arguments
-  setDefaults(undefined)
+  setDefaults(undefined);
 });
