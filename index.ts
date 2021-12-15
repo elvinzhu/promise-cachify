@@ -31,6 +31,9 @@ interface ICacheConfig<TArgs extends any[]> {
 }
 
 interface ICacheItem {
+  /**
+   * expire time. 0 means never expire.
+   */
   expire: number;
   data: Promise<string>;
 }
@@ -230,7 +233,7 @@ class CacheHandler<TArgs extends any[], TOut> {
         return Promise.reject(err);
       });
     } else {
-      logDebug(debug, `cache key is invalid:`, cacheKey, '. ignored.');
+      logDebug(debug, `cache key is invalid`);
     }
     return cacheData;
   }
@@ -328,7 +331,7 @@ class CacheHandler<TArgs extends any[], TOut> {
   }
 
   /**
-   * check if cache key exist.
+   * check if cache exist.
    * @param key cache key. use default key if missing
    * @returns
    */
@@ -336,10 +339,11 @@ class CacheHandler<TArgs extends any[], TOut> {
     key = normalizeKey(key);
     if (this._cacheMap.has(key)) {
       const data = this._cacheMap.get(key);
-      if (!data.expire || Date.now() <= data.expire) {
+      if (data.expire && Date.now() > data.expire) {
+        this.clear(key); // expired. so release memory
+      } else {
         return true;
       }
-      this._cacheMap.delete(key); // release memory
     }
     return false;
   }
