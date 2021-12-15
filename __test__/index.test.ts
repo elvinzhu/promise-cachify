@@ -191,12 +191,11 @@ test('set & get & clear & has & getAll & clearAll work properly', async () => {
 });
 
 test('auto remove after call "has"', async () => {
-  // auto remove after call "has"
   const getDetail2 = cache((param) => request('/api/getDetail', param), {
     maxAge: 0.1,
   });
   getDetail2.do({ id: '1' });
-  await sleep(101);
+  await sleep(110);
   expect(getDetail2.getAll().has('id=1')).toBe(true);
   expect(getDetail2.has('id=1')).toBe(false);
   expect(getDetail2.getAll().has('id=1')).toBe(false);
