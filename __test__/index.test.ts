@@ -20,6 +20,9 @@ test('getCacheKey work properly', () => {
   expect(getDetail.getCacheKey({ id: null, name: 'xx', age: undefined })).toBe('age=$-undefined&id=$-null&name=xx');
   expect(getDetail.getCacheKey({ id: null, name: 'xx', age: undefined })).toBe('age=$-undefined&id=$-null&name=xx');
   expect(getDetail.getCacheKey('1', [3], { id: 1, name: null })).toBe('1&$-3&id=$-1&name=$-null');
+  expect(getDetail.getCacheKey({ id: 1 }, { id: 2 })).toBe('id=$-1&id=$-2');
+  expect(getDetail.getCacheKey([1], [2])).toBe('$-1&$-2');
+  expect(getDetail.getCacheKey({})).toBe('{}');
   // complex object is not allowed
   expect(getDetail.getCacheKey({ id: 1, d: { name: 'el' } })).toBeNull();
   expect(getDetail.getCacheKey([{ d: { name: 'el' } }])).toBeNull();
@@ -46,17 +49,30 @@ test('getCacheKey work properly', () => {
   // override default key;
   const getDetail2 = cache(() => request('/api/getDetail', 1), { key: '999' });
   expect(getDetail2.getCacheKey()).toBe('999');
+  // bad custom key
+  // @ts-ignore
+  const getDetail3 = cache(() => request('/api/getDetail', 1), { key: new Map(), debug: true });
+  getDetail3.do();
+  expect(getDetail3.getCacheKey()).toBeNull();
+  // @ts-ignore
+  const getDetail4 = cache(() => request('/api/getDetail', 1), { key: {} });
+  expect(getDetail4.getCacheKey()).toBeNull();
+  // invalid key returned by function key
+  const getDetail5 = cache(() => request('/api/getDetail', {}), {
+    //@ts-ignore
+    key: () => {
+      return {};
+    },
+  });
+  expect(getDetail5.getCacheKey()).toBeNull();
 });
 
 test('cache work perperty with concurrent call', async () => {
   const getDetailCall = jest.fn();
-  const getDetail = cache(
-    ({ id }: { id: number }) => {
-      getDetailCall();
-      return request('/api/getDetail', { id });
-    },
-    { debug: true }
-  );
+  const getDetail = cache(({ id }: { id: number }) => {
+    getDetailCall();
+    return request('/api/getDetail', { id });
+  });
   const task = getDetail.do({ id: 1 });
   const task2 = getDetail.do({ id: 1 });
   expect(getDetailCall.call.length).toBe(1);
@@ -157,13 +173,18 @@ test('set & get & clear & has & getAll & clearAll work properly', async () => {
   expect(getDetail.getAll().size).toBe(0);
 
   expect(getDetail.get('a_not_exist_key')).toBe(null);
+  // clear invalid key
+  // @ts-ignore
+  getDetail.clear(NaN);
+});
 
+test('auto remove after call "has"', async () => {
   // auto remove after call "has"
   const getDetail2 = cache((param) => request('/api/getDetail', param), {
     maxAge: 0.1,
   });
   getDetail2.do({ id: '1' });
-  await sleep(110);
+  await sleep(101);
   expect(getDetail2.getAll().has('id=1')).toBe(true);
   expect(getDetail2.has('id=1')).toBe(false);
   expect(getDetail2.getAll().has('id=1')).toBe(false);
@@ -268,19 +289,24 @@ test('load dirty store data correctly', async () => {
   expect(mockFn).toHaveBeenCalled();
 });
 
-// test('setDefaults works properly', () => {
-//   console.error = jest.fn();
-//   // error cases
-//   setDefaults({ key: '' });
-//   expect(console.error).toBeCalledWith(storePrefix, `invaid default "key": ${''}. ignored.`);
-//   //@ts-ignore
-//   setDefaults({ key: 456 });
-//   expect(console.error).toBeCalledWith(storePrefix, `invaid default "key": ${456}. ignored.`);
-
-//   // correct cases
-//   const defKey = '__test__';
-//   setDefaults({ key: defKey });
-//   const getDetail = cache(() => Promise.resolve(0));
-//   getDetail.do();
-//   expect(getDetail.has(defKey));
-// });
+test('setDefaults works properly', async () => {
+  const testData1 = { id: 0 };
+  const persist = 'setDefaults_test';
+  // test maxAge
+  setDefaults({ maxAge: 0.2, persistMedia: 'localStorage' });
+  const getDetail = cache((param) => Promise.resolve(1), { persist });
+  await getDetail.do(testData1);
+  expect(getDetail.has(getDetail.getCacheKey(testData1))).toBe(true);
+  await sleep(201);
+  expect(getDetail.has(getDetail.getCacheKey(testData1))).toBe(false);
+  await sleep(0); // wait for micro task done.
+  // test persist
+  expect(localStorage.length).toBe(0);
+  expect(sessionStorage.length).toBe(0);
+  await getDetail.do(testData1);
+  await sleep(0);
+  expect(localStorage.length).toBe(1);
+  expect(sessionStorage.length).toBe(0);
+  // invalid arguments
+  setDefaults(undefined)
+});
