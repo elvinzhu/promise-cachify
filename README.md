@@ -20,12 +20,15 @@ npm install promise-cachify
 - Customizable (key generation, exipre time... )
 - Deletion of cached items.
 - Debug mode
+- Support two styles of usage.
 - Fully typescript-ready.
-- No dependencies
+- No dependencies except `tslib`
 
 ## Get Started
 
 ### Basic Usage
+
+_.do_ style
 
 ```ts
 import withCache, { setDefaults, DefaultKey } from 'promise-cachify';
@@ -34,14 +37,29 @@ const getDetail = withCache(function (id: number) {
   return yourFetchFn('/api/getDetail', { id });
 });
 
-Promise.all([getDetail.do(1), getDetail.do(1), getDetail.do(1)]);
+await Promise.all([getDetail.do(1), getDetail.do(1), getDetail.do(1)]);
 // concurrent request share the same http request.
 // so the above results in just 1 http call;
 // note the '.do(...)', that explicitly tell the reader
 // "hi man, the result is problemly from cache! "
 
-getDetail.do(1); // from cache;
+await getDetail.do(1); // from cache;
 ```
+
+_as-it-is_ style
+
+```ts
+import { cache, setDefaults, DefaultKey } from 'promise-cachify';
+
+const getDetail = cache(function (id: number) {
+  return yourFetchFn('/api/getDetail', { id });
+});
+
+await Promise.all([getDetail(1), getDetail(1), getDetail(1)]);
+await getDetail(1); // from cache;
+```
+
+APIs of Both styles are with the same signature. But APIs is under `getDetail.cache` when _as-it-is_ style.
 
 ### Deletion of cached items.
 
