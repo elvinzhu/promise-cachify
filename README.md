@@ -3,7 +3,7 @@
 [![Build Status](https://app.travis-ci.com/elvinzhu/promise-cachify.svg?branch=main)](https://app.travis-ci.com/elvinzhu/promise-cachify)
 [![codecov](https://codecov.io/gh/elvinzhu/promise-cachify/branch/main/graph/badge.svg?v=1)](https://codecov.io/gh/elvinzhu/promise-cachify)
 
-Caching for promises. 
+Caching for promises.
 
 ## Installation
 
@@ -15,6 +15,7 @@ npm install promise-cachify
 
 - Concurrent de-duplication.
 - Caching resolved values while ignore rejected.
+- Data persistance.
 - Strong and type-safe cache key generation.
 - Customizable (key generation, exipre time... )
 - Deletion of cached items.
@@ -156,6 +157,10 @@ examples
 | fn({ id: 1, d: { name: 'el' } })         | null and no cache will be performed |
 
 see more at the first test case in `__test__/index.test.ts`
+
+## Compatibility
+
+browsers that support or polyfilled `Map` `Promise`
 
 ## Licence
 
