@@ -1,3 +1,7 @@
+/**
+ * @jest-environment jsdom
+ */
+
 import { jest, describe, expect, test, it } from '@jest/globals';
 import cache, { setDefaults, DefaultKey } from '../index';
 import { request, requestFixed, falseRequest, sleep, errorRequest } from './helper';
