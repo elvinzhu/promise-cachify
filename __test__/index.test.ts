@@ -3,7 +3,7 @@
  */
 
 import { jest, describe, expect, test, it } from '@jest/globals';
-import cache, { setDefaults, DefaultKey } from '../index';
+import withCache, { cache, setDefaults, DefaultKey } from '../index';
 import { request, requestFixed, falseRequest, sleep, errorRequest } from './helper';
 
 beforeEach(() => {
@@ -11,14 +11,13 @@ beforeEach(() => {
   sessionStorage.clear();
 });
 
-const storePrefix = '[promise-cache]';
 const consoleError = console.error;
 afterEach(() => {
   console.error = consoleError;
 });
 
 test('getCacheKey work properly', () => {
-  const getDetail = cache((...param: any[]) => request('/api/getDetail', param));
+  const getDetail = withCache((...param: any[]) => request('/api/getDetail', param));
   // simple object
   expect(getDetail.getCacheKey({ id: 1, name: 'xx', age: 1 })).toBe('age=$-1&id=$-1&name=xx'); // note the order
   expect(getDetail.getCacheKey({ id: null, name: 'xx', age: undefined })).toBe('age=$-undefined&id=$-null&name=xx');
@@ -51,18 +50,18 @@ test('getCacheKey work properly', () => {
   expect(getDetail.getCacheKey([undefined])).toBe('[$-undefined]');
   expect(getDetail.getCacheKey([null])).toBe('[$-null]');
   // override default key;
-  const getDetail2 = cache(() => request('/api/getDetail', 1), { key: '999' });
+  const getDetail2 = withCache(() => request('/api/getDetail', 1), { key: '999' });
   expect(getDetail2.getCacheKey()).toBe('999');
   // bad custom key
   // @ts-ignore
-  const getDetail3 = cache(() => request('/api/getDetail', 1), { key: new Map(), debug: true });
+  const getDetail3 = withCache(() => request('/api/getDetail', 1), { key: new Map(), debug: true });
   getDetail3.do();
   expect(getDetail3.getCacheKey()).toBeNull();
   // @ts-ignore
-  const getDetail4 = cache(() => request('/api/getDetail', 1), { key: {} });
+  const getDetail4 = withCache(() => request('/api/getDetail', 1), { key: {} });
   expect(getDetail4.getCacheKey()).toBeNull();
   // invalid key returned by function key
-  const getDetail5 = cache(() => request('/api/getDetail', {}), {
+  const getDetail5 = withCache(() => request('/api/getDetail', {}), {
     //@ts-ignore
     key: () => {
       return {};
@@ -73,7 +72,7 @@ test('getCacheKey work properly', () => {
 
 test('cache work perperty with concurrent call', async () => {
   const getDetailCall = jest.fn();
-  const getDetail = cache(({ id }: { id: number }) => {
+  const getDetail = withCache(({ id }: { id: number }) => {
     getDetailCall();
     return request('/api/getDetail', { id });
   });
@@ -85,8 +84,22 @@ test('cache work perperty with concurrent call', async () => {
   expect(res1).toEqual(res2);
 });
 
+test('cache work perperty using as-it-is style', async () => {
+  const getDetailCall = jest.fn();
+  const getDetail = cache(({ id }: { id: number }) => {
+    getDetailCall();
+    return request('/api/getDetail', { id });
+  });
+  const task = getDetail({ id: 1 });
+  const task2 = getDetail({ id: 1 });
+  expect(getDetailCall.call.length).toBe(1);
+  const [res1, res2] = await Promise.all([task, task2]);
+  expect(res1).toBeTruthy();
+  expect(res1).toEqual(res2);
+});
+
 test('data isolated correctly', async () => {
-  const getDetail = cache((param) => {
+  const getDetail = withCache((param) => {
     return request('/api/getDetail', param);
   });
   const data1 = await getDetail.do({ id: 1 });
@@ -96,7 +109,7 @@ test('data isolated correctly', async () => {
 });
 
 test('test with unhandledRejected exception', () => {
-  const getDetail = cache((param) => {
+  const getDetail = withCache((param) => {
     return errorRequest('/api/getDetail', param);
   });
   const data = { id: 1 };
@@ -110,17 +123,17 @@ test('test with unhandledRejected exception', () => {
 });
 
 test('use default key properly', async () => {
-  const getDetail = cache(() => Promise.resolve(1));
+  const getDetail = withCache(() => Promise.resolve(1));
   await getDetail.do();
   expect(getDetail.has(DefaultKey)).toBe(true);
 
-  const getDetail2 = cache(() => Promise.resolve(1));
+  const getDetail2 = withCache(() => Promise.resolve(1));
   // empty object
   // @ts-ignore
   await getDetail2.do({});
   expect(getDetail2.has(DefaultKey)).toBe(false);
 
-  const getDetail3 = cache(() => Promise.resolve(1));
+  const getDetail3 = withCache(() => Promise.resolve(1));
   // @ts-ignore
   await getDetail3.do(undefined);
 
@@ -128,7 +141,7 @@ test('use default key properly', async () => {
 });
 
 test('maxAge work properly', async () => {
-  const getDetail = cache(
+  const getDetail = withCache(
     (param) => {
       return request('/api/getDetail', param);
     },
@@ -143,7 +156,7 @@ test('maxAge work properly', async () => {
 });
 
 test('function key work properly', async () => {
-  const getDetail = cache(
+  const getDetail = withCache(
     (param) => {
       return request('/api/getDetail', param);
     },
@@ -157,7 +170,7 @@ test('function key work properly', async () => {
 });
 
 test('set & get & clear & has & getAll & clearAll work properly', async () => {
-  const getDetail = cache((param) => request('/api/getDetail', param));
+  const getDetail = withCache((param) => request('/api/getDetail', param));
   const data = { success: false, data: 3 };
 
   const noneDefaultKey1 = 'xx=222';
@@ -195,7 +208,7 @@ test('set & get & clear & has & getAll & clearAll work properly', async () => {
 });
 
 test('auto remove after call "has"', async () => {
-  const getDetail2 = cache((param) => request('/api/getDetail', param), {
+  const getDetail2 = withCache((param) => request('/api/getDetail', param), {
     maxAge: 0.1,
   });
   getDetail2.do({ id: '1' });
@@ -207,14 +220,14 @@ test('auto remove after call "has"', async () => {
 
 test('persist work properly', async () => {
   const callFn = jest.fn();
-  const getDetail = cache(
+  const getDetail = withCache(
     (param) => {
       callFn();
       return requestFixed('/api/getDetail', param);
     },
     { persist: 'key' }
   );
-  const getDetail2 = cache((param) => requestFixed('/api/getDetail', param), { persist: 'key3', persistMedia: 'localStorage' });
+  const getDetail2 = withCache((param) => requestFixed('/api/getDetail', param), { persist: 'key3', persistMedia: 'localStorage' });
 
   const data = { id: 1 };
   const resultData = {
@@ -241,8 +254,8 @@ test('persist work properly', async () => {
 test('duplicate "persist" catched correctly', async () => {
   const persist = 'duplicate_test';
   const mockFn = (console.error = jest.fn());
-  const getDetail = cache(() => Promise.resolve(1), { persist });
-  const getDetail2 = cache(() => Promise.resolve(2), { persist });
+  const getDetail = withCache(() => Promise.resolve(1), { persist });
+  const getDetail2 = withCache(() => Promise.resolve(2), { persist });
   await getDetail.do();
   await getDetail2.do();
   expect(mockFn.mock.calls[0][3]).toContain('duplicate');
@@ -252,13 +265,13 @@ test('invalid "persist" catched correctly', async () => {
   const persist = 321546897;
   const mockFn = (console.error = jest.fn());
   // @ts-ignore
-  const getDetail = cache(() => Promise.resolve(1), { persist });
+  const getDetail = withCache(() => Promise.resolve(1), { persist });
   await getDetail.do();
   expect(mockFn.mock.calls[0][3]).toContain('invaid');
 });
 
 test('auto remove storage key correctly', async () => {
-  const getDetail = cache((param: { id: number }) => Promise.resolve(1), { persist: 'auto_remove_test' });
+  const getDetail = withCache((param: { id: number }) => Promise.resolve(1), { persist: 'auto_remove_test' });
   await getDetail.do({ id: 1 });
   await getDetail.do({ id: 2 });
   await sleep(0);
@@ -282,7 +295,7 @@ test('load store data correctly', async () => {
   );
 
   const mockFn = jest.fn();
-  const getDetail = cache(
+  const getDetail = withCache(
     (param) => {
       mockFn();
       return Promise.resolve(1);
@@ -299,7 +312,7 @@ test('load dirty store data correctly', async () => {
   const persist = 'load_data_test2';
   sessionStorage.setItem('PROMISE_CACHE_' + persist, 'this is a piece of dirty data');
   const mockFn = (console.error = jest.fn());
-  const getDetail = cache((param) => Promise.resolve(1), { persist });
+  const getDetail = withCache((param) => Promise.resolve(1), { persist });
   expect(getDetail.getAll().size).toBe(0);
   expect(mockFn).toHaveBeenCalled();
 });
@@ -309,7 +322,7 @@ test('setDefaults works properly', async () => {
   const persist = 'setDefaults_test';
   // test maxAge
   setDefaults({ maxAge: 0.2, persistMedia: 'localStorage' });
-  const getDetail = cache((param) => Promise.resolve(1), { persist });
+  const getDetail = withCache((param) => Promise.resolve(1), { persist });
   await getDetail.do(testData1);
   expect(getDetail.has(getDetail.getCacheKey(testData1))).toBe(true);
   await sleep(201);

@@ -371,11 +371,26 @@ export default function withCache<T extends (...args: any) => Promise<any>>(reso
   return new CacheHandler<Parameters<T>, GetPromiseT<ReturnType<T>>>(resolver, config);
 }
 
+/**
+ * make the fetch result of the "resolver" cacheable.
+ * @param resolver data fetcher
+ * @param config cache config
+ * @returns
+ */
+export function cache<T extends (...args: any) => Promise<any>>(resolver: T, config?: ICacheConfig<Parameters<T>>) {
+  const instance = new CacheHandler<Parameters<T>, GetPromiseT<ReturnType<T>>>(resolver, config);
+  function run(...args: Parameters<T>) {
+    return instance.do(...args);
+  }
+  run.cache = instance;
+  return run;
+}
+
 // function request(id: number, name: string) {
 //   return Promise.resolve(1);
 // }
 
 // type Out = Parameters<Parameters<ReturnType<typeof request>['then']>[0]>[0];
-// const getDetail = withCache(request);
+// const getDetail = cache(request);
 
-// getDetail.do(1, 'zyy');
+// getDetail(1, 'zyy');
