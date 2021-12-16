@@ -28,7 +28,7 @@ npm install promise-cachify
 ### Basic Usage
 
 ```ts
-import withCache from 'promise-cachify';
+import withCache, { setDefaults, DefaultKey } from 'promise-cachify';
 
 const getDetail = withCache(function (id: number) {
   return yourFetchFn('/api/getDetail', { id });
