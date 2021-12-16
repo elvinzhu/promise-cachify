@@ -120,7 +120,7 @@ function generateKey(args: any[]): string | null {
         if (currentArg.filter(isBadKeySegment).length) {
           return null;
         } else {
-          keySegments.push(currentArg.map(transformKey).join('_'));
+          keySegments.push('[' + currentArg.map(transformKey).join('_') + ']');
         }
       } else {
         keySegments.push('[]');

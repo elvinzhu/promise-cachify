@@ -19,9 +19,9 @@ test('getCacheKey work properly', () => {
   expect(getDetail.getCacheKey({ id: 1, name: 'xx', age: 1 })).toBe('age=$-1&id=$-1&name=xx'); // note the order
   expect(getDetail.getCacheKey({ id: null, name: 'xx', age: undefined })).toBe('age=$-undefined&id=$-null&name=xx');
   expect(getDetail.getCacheKey({ id: null, name: 'xx', age: undefined })).toBe('age=$-undefined&id=$-null&name=xx');
-  expect(getDetail.getCacheKey('1', [3], { id: 1, name: null })).toBe('1&$-3&id=$-1&name=$-null');
+  expect(getDetail.getCacheKey('1', [1, '2'], { id: 1, name: null })).toBe('1&[$-1_2]&id=$-1&name=$-null');
   expect(getDetail.getCacheKey({ id: 1 }, { id: 2 })).toBe('id=$-1&id=$-2');
-  expect(getDetail.getCacheKey([1], [2])).toBe('$-1&$-2');
+  expect(getDetail.getCacheKey([1], ['2'])).toBe('[$-1]&[2]');
   expect(getDetail.getCacheKey({})).toBe('{}');
   // complex object is not allowed
   expect(getDetail.getCacheKey({ id: 1, d: { name: 'el' } })).toBeNull();
@@ -44,8 +44,8 @@ test('getCacheKey work properly', () => {
   expect(getDetail.getCacheKey('NaN')).toBe('NaN');
   // empty array
   expect(getDetail.getCacheKey([])).toBe('[]');
-  expect(getDetail.getCacheKey([undefined])).toBe('$-undefined');
-  expect(getDetail.getCacheKey([null])).toBe('$-null');
+  expect(getDetail.getCacheKey([undefined])).toBe('[$-undefined]');
+  expect(getDetail.getCacheKey([null])).toBe('[$-null]');
   // override default key;
   const getDetail2 = cache(() => request('/api/getDetail', 1), { key: '999' });
   expect(getDetail2.getCacheKey()).toBe('999');
