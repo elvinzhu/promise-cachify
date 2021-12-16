@@ -3,7 +3,7 @@
     "outDir": "dist",
     "target": "es5",
     "module": "es6",
-    "importHelpers": false,
+    "importHelpers": true,
     "noImplicitAny": true,
     "removeComments": false,
     "moduleResolution": "node",
