@@ -29,7 +29,7 @@ npm install promise-cachify
 
 ### Basic Usage
 
-_.do_ style
+_.do_ style (recommended)
 
 ```ts
 import withCache, { setDefaults, DefaultKey } from 'promise-cachify';
@@ -60,7 +60,12 @@ await Promise.all([getDetail(1), getDetail(1), getDetail(1)]);
 await getDetail(1); // from cache;
 ```
 
-APIs of Both styles are with the same signature. But APIs is under `getDetail.cache` when _as-it-is_ style.
+APIs of Both styles are with the same signature. But APIs are under `getDetail.cache` when _as-it-is_ style.
+
+| style      | API signature | API location | Suitable scene |
+| ---------- | ------------- | ------------ | -------------- |
+| _.do_      | same          | fn.          | new code       |
+| _as-it-is_ | same          | fn.cache.    | old project    |
 
 ### Deletion of cached items.
 
