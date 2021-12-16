@@ -16,6 +16,7 @@ npm install promise-cachify
 - Concurrent de-duplication.
 - Caching resolved values while ignore rejected.
 - Data persistance.
+- Data isolation(fresh new data for each return).
 - Strong and type-safe cache key generation.
 - Customizable (key generation, exipre time... )
 - Deletion of cached items.
