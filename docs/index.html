@@ -33,11 +33,11 @@
 
         const getDetail = cache(
             ({ id }) => {
-                return Promise.resolve({ success: true, data: id });
+                return errorRequest('/api/getDetail', { id })
             },
         );
 
-        getDetail.getCacheKey({ id: 3 })
+        getDetail.do({ id: 1 }).then(res=> {});
     </script>
 </head>
 
