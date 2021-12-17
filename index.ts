@@ -289,20 +289,23 @@ class CacheHandler<TArgs extends any[], TOut> {
    * @param key cache key.
    */
   set(data: TOut | Promise<TOut>, key?: TKey) {
-    if (key !== undefined && !isString(key)) return false;
     key = normalizeKey(key);
+    if (!isString(key)) return false;
     const { maxAge, debug } = this._config;
     const expire = maxAge > 0 ? Date.now() + maxAge * 1000 : 0;
-    const cacheData = Promise.resolve(data).then((res) => {
+    const originTask = Promise.resolve(data);
+    const cacheData = originTask.then((res) => {
       this._persistCache();
       return JSON.stringify(res);
     });
+    // avoid error to dirty the devtool console
+    cacheData.catch(() => {});
     // must be set in sync, or the concurrent request wont get it.
     this._cacheMap.set(key, { expire, data: cacheData });
     logDebug(debug, `set cache with key:${key}, expire at: ${expire > 0 ? new Date(expire) : 'never'}`);
-    // not chained catch to make it being executed earlier than user's catch
-    // or user won't be able to manipulate the cache item;
-    cacheData.catch((err: any) => {
+    // use `originTask` to make sure this happen earlier than user's `catch`
+    // or user might be 'see' the cached item.
+    originTask.catch((err: any) => {
       this._cacheMap.delete(key);
       logDebug(debug, 'promise rejected, remove cache:', key, err);
     });
