@@ -26,6 +26,7 @@ test('getCacheKey work properly', () => {
   expect(getDetail.getCacheKey({ id: 1 }, { id: 2 })).toBe('id=$-1&id=$-2');
   expect(getDetail.getCacheKey([1], ['2'])).toBe('[$-1]&[2]');
   expect(getDetail.getCacheKey({})).toBe('{}');
+  expect(getDetail.getCacheKey('')).toBe('');
   // complex object is not allowed
   expect(getDetail.getCacheKey({ id: 1, d: { name: 'el' } })).toBeNull();
   expect(getDetail.getCacheKey([{ d: { name: 'el' } }])).toBeNull();
@@ -108,18 +109,18 @@ test('data isolated correctly', async () => {
   expect(data2.data).not.toEqual(data1.data);
 });
 
-test('test with unhandledRejected exception', () => {
+test('test with unhandledRejected exception', async () => {
   const getDetail = withCache((param) => {
     return errorRequest('/api/getDetail', param);
   });
+  const errorCallback = jest.fn();
   const data = { id: 1 };
   const task = getDetail.do(data);
-  const errorCallback = jest.fn();
-  expect(getDetail.has(getDetail.getCacheKey(data))).toBe(true);
-  return task.catch(errorCallback).finally(() => {
-    expect(errorCallback.call.length).toBe(1);
-    expect(getDetail.has(getDetail.getCacheKey(data))).toBe(false);
-  });
+  const key = getDetail.getCacheKey(data);
+  expect(getDetail.has(key)).toBe(true);
+  await task.catch(errorCallback);
+  expect(getDetail.has(key)).toBe(false);
+  expect(errorCallback).toBeCalledTimes(1);
 });
 
 test('use default key properly', async () => {
