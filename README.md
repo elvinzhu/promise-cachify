@@ -42,7 +42,7 @@ await Promise.all([getDetail.do(1), getDetail.do(1), getDetail.do(1)]);
 // concurrent request share the same http request.
 // so the above results in just 1 http call;
 // note the '.do(...)', that explicitly tell the reader
-// "hi man, the result is problemly from cache! "
+// "hi man, the result is probably from cache! "
 
 await getDetail.do(1); // from cache;
 ```
