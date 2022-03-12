@@ -9,6 +9,7 @@ import { request, requestFixed, falseRequest, sleep, errorRequest } from './help
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
+  setDefaults({ maxAge: 0, debug: false, persistMedia: undefined });
 });
 
 const consoleError = console.error;
@@ -54,10 +55,12 @@ test('getCacheKey work properly', () => {
   const getDetail2 = withCache(() => request('/api/getDetail', 1), { key: '999' });
   expect(getDetail2.getCacheKey()).toBe('999');
   // bad custom key
+  console.error = jest.fn();
   // @ts-ignore
   const getDetail3 = withCache(() => request('/api/getDetail', 1), { key: new Map(), debug: true });
   getDetail3.do();
   expect(getDetail3.getCacheKey()).toBeNull();
+  expect(console.error).toBeCalled();
   // @ts-ignore
   const getDetail4 = withCache(() => request('/api/getDetail', 1), { key: {} });
   expect(getDetail4.getCacheKey()).toBeNull();
@@ -244,8 +247,8 @@ test('persist work properly', async () => {
   await sleep(0);
   // store properly
   expect(callFn).toBeCalledTimes(1);
-  expect(window.sessionStorage.getItem('PROMISE_CACHE_key')).toBe(JSON.stringify(ret));
-  expect(window.localStorage.getItem('PROMISE_CACHE_key3')).toBe(JSON.stringify(ret));
+  expect(window.sessionStorage.getItem('PROMISE_CACHIFY_key')).toBe(JSON.stringify(ret));
+  expect(window.localStorage.getItem('PROMISE_CACHIFY_key3')).toBe(JSON.stringify(ret));
   // read properly
   const res = await getDetail.do(data);
   expect(callFn).toBeCalledTimes(1);
@@ -288,7 +291,7 @@ test('auto remove storage key correctly', async () => {
 test('load store data correctly', async () => {
   const persist = 'load_data_test';
   sessionStorage.setItem(
-    'PROMISE_CACHE_' + persist,
+    'PROMISE_CACHIFY_' + persist,
     JSON.stringify([
       ['id=1', { expire: 0, data: JSON.stringify({ success: true, data: 1 }) }],
       ['id=2', { expire: 0, data: JSON.stringify({ success: true, data: 2 }) }],
@@ -311,7 +314,7 @@ test('load store data correctly', async () => {
 
 test('load dirty store data correctly', async () => {
   const persist = 'load_data_test2';
-  sessionStorage.setItem('PROMISE_CACHE_' + persist, 'this is a piece of dirty data');
+  sessionStorage.setItem('PROMISE_CACHIFY_' + persist, 'this is a piece of dirty data');
   const mockFn = (console.error = jest.fn());
   const getDetail = withCache((param) => Promise.resolve(1), { persist });
   expect(getDetail.getAll().size).toBe(0);

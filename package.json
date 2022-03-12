@@ -1,6 +1,6 @@
 {
   "name": "promise-cachify",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Caching for promises",
   "main": "dist/index.js",
   "module": "index.esm.js",
@@ -43,9 +43,7 @@
     "rollup": "^2.61.1",
     "typescript": "^4.5.4"
   },
-  "dependencies": {
-    "tslib": "^2.3.1"
-  },
+  "dependencies": {},
   "jest": {
     "collectCoverageFrom": [
       "index.ts"

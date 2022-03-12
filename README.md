@@ -23,7 +23,7 @@ npm install promise-cachify
 - Debug mode
 - Support two styles of usage.
 - Fully typescript-ready.
-- No dependencies except `tslib`
+- No dependencies
 
 ## Get Started
 

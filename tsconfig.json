@@ -3,12 +3,14 @@
     "outDir": "dist",
     "target": "es5",
     "module": "es6",
-    "importHelpers": true,
+    "lib": ["es2016", "DOM", "ES2017"],
+    "importHelpers": false,
     "noImplicitAny": true,
     "removeComments": false,
     "moduleResolution": "node",
     "declaration": true,
     "declarationDir": "./"
   },
+  "exclude": ["node_modules"],
   "files": ["index.ts"]
 }

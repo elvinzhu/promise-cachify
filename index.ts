@@ -16,7 +16,7 @@ interface ICacheConfig<TArgs extends any[]> {
    */
   key?: string | ((this: CacheHandler<TArgs, any>, ...args: TArgs) => string);
   /**
-   * if to store into storage.
+   * the key used to store data into storage.
    */
   persist?: string;
   /**
@@ -42,8 +42,8 @@ type TStoreItem = Omit<ICacheItem, 'data'> & { data: string };
 type TDefaultConfig = Omit<ICacheConfig<any>, 'persist' | 'key'>;
 
 const UsedPersistKeys: string[] = [];
-const LogPrefix = '[promise-cache]';
-const StorePrefix = 'PROMISE_CACHE_';
+const LogPrefix = '[promise-cachify]';
+const StorePrefix = 'PROMISE_CACHIFY_';
 
 export const DefaultKey = '__INTERNAL_USE__';
 
@@ -81,12 +81,16 @@ function normalizeKey(key: any) {
 }
 
 function logError(...args: any[]) {
-  console.error(`${LogPrefix}`, new Date().toLocaleTimeString(), '--', ...args);
+  const params: any[] = Array.prototype.slice.call(arguments, 0);
+  params.unshift(`${LogPrefix}`, new Date().toLocaleTimeString(), '--');
+  console.error.apply(console, params);
 }
 
 function logDebug(debug: boolean, ...args: any[]) {
   if (debug) {
-    console.log(`%c${LogPrefix}`, 'color: #2f54eb', new Date().toLocaleTimeString(), '--', ...args);
+    const params: any[] = Array.prototype.slice.call(arguments, 1);
+    params.unshift(`%c${LogPrefix}`, 'color: #2f54eb', new Date().toLocaleTimeString(), '--');
+    console.error.apply(console, params);
   }
 }
 
@@ -149,7 +153,7 @@ class CacheHandler<TArgs extends any[], TOut> {
   private _resolver: (...args: TArgs) => Promise<TOut>;
 
   constructor(resolver: (...args: TArgs) => Promise<TOut>, config: ICacheConfig<TArgs>) {
-    this._config = { ...DefaultConfig, ...config };
+    this._config = Object.assign({}, DefaultConfig, config);
     this._resolver = resolver;
     const { persist } = this._config;
     if (persist && typeof persist === 'string') {
@@ -358,9 +362,16 @@ class CacheHandler<TArgs extends any[], TOut> {
  */
 export function setDefaults(config: TDefaultConfig) {
   if (config && isPlainObject(config)) {
-    // @ts-ignore avoid passing persist/key
-    const { persist, key, ...rest } = config;
-    Object.assign(DefaultConfig, rest);
+    const { debug, maxAge, persistMedia } = config;
+    if (maxAge >= 0) {
+      DefaultConfig.maxAge = maxAge;
+    }
+    if (debug !== undefined) {
+      DefaultConfig.debug = !!debug;
+    }
+    if (persistMedia) {
+      DefaultConfig.persistMedia = persistMedia;
+    }
   }
 }
 
