@@ -1,6 +1,6 @@
 {
   "name": "promise-cachify",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Caching for promises",
   "main": "dist/index.js",
   "module": "index.esm.js",
